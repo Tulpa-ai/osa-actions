@@ -109,6 +109,3 @@ class HydraBruteForceAction(Action):
                 changes.append((pattern, "merge_if_not_match", credential_service_pattern))
                 changes.append((pattern, "merge_if_not_match", user_pattern))
         return changes
-
-
-actions = [HydraBruteForceAction()]

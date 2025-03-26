@@ -73,6 +73,3 @@ class RshRootLogin(Action):
 
         session = Entity('Session', alias='session', protocol='rsh', id=output.session, executes_on=legacy_port._id)
         return [(None, "merge", session)]
-
-
-actions = [RshRootLogin()]

@@ -82,6 +82,3 @@ class SMBShareEnumeration(Action):
                 )
                 changes.append((asset_and_new_drive_multipattern, "merge", service_to_drive_pattern))
         return changes
-
-
-actions = [SMBShareEnumeration()]
