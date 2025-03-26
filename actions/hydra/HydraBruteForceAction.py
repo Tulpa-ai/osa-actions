@@ -6,7 +6,8 @@ from action_state_interface.action import Action, StateChangeSequence
 from action_state_interface.action_utils import shell
 from action_state_interface.exec import ActionExecutionResult
 from artefacts.ArtefactManager import ArtefactManager
-from kg_api import Entity, GraphDB, MultiPattern, Pattern, Relationship
+from kg_api import Ent, GraphDB, MultiPattern, Pattern, Rel
+from kg_api.utils import safe_add_user
 from Session import SessionManager
 
 
@@ -34,8 +35,8 @@ class HydraBruteForceAction(Action):
         """
         Identify target patterns with Asset -> Path -> Service (selected service).
         """
-        asset = Entity('Asset', alias='asset')
-        service = Entity('Service', alias='service')
+        asset = Ent('Asset', alias='asset')
+        service = Ent('Service', alias='service')
         pattern = asset.directed_path_to(service)
         matches = kg.get_matching(pattern)
         return [p for p in matches if p.get('service').get('protocol') in ['ftp', 'ssh']]
@@ -90,6 +91,7 @@ class HydraBruteForceAction(Action):
         """
         Add successful credentials to the knowledge graph.
         """
+        asset = pattern.get('asset')
         service = pattern.get('service')
 
         with artefacts.open(output.artefacts["scan_results_json"], 'r') as f:
@@ -100,12 +102,9 @@ class HydraBruteForceAction(Action):
             username = result.get('login')
             password = result.get('password')
             if username and password:
-                creds = Entity('Credentials', alias='credentials', username=username, password=password)
-                credential_service_pattern = creds.with_edge(
-                    Relationship(type='secured_with', direction='r')
-                ).with_node(service)
-                user = Entity('User', alias='user', username=username)
-                user_pattern = user.with_edge(Relationship('is_client')).with_node(service)
-                changes.append((pattern, "merge_if_not_match", credential_service_pattern))
-                changes.append((pattern, "merge_if_not_match", user_pattern))
+                creds = Ent('Credentials', alias='creds', username=username, password=password)
+                cred_svc_pattern = creds - Rel(type='secured_with') - service
+                user = Ent('User', alias='user', username=username)
+                changes.extend(safe_add_user(asset, service, user))
+                changes.append((pattern, "merge_if_not_match", cred_svc_pattern))
         return changes

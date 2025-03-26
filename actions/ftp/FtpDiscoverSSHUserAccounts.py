@@ -1,7 +1,9 @@
 import os
-from typing import Union
+from typing import Any, Union
 from action_state_interface.action import Action, StateChangeSequence
-from kg_api import Entity, GraphDB, MultiPattern, Pattern, Relationship
+from artefacts.ArtefactManager import ArtefactManager
+from kg_api import Ent, Entity, GraphDB, MultiPattern, Pattern, Rel, Relationship
+from kg_api.utils import safe_add_user
 
 def get_ssh_user_accounts(path_list) -> list[str]:
     ssh_users = set()
@@ -48,25 +50,37 @@ class FtpDiscoverSSHUserAccounts(Action):
         return all_files
 
     def capture_state_change(
-        self, kg: GraphDB, artefacts, pattern: Pattern, output
+        self, kg: GraphDB, artefacts: ArtefactManager, pattern: Pattern, output: Any
     ) -> StateChangeSequence:
+        """Capture and update the knowledge graph based on discovered SSH user accounts.
+
+        This function processes the output from the FTP discovery, extracts SSH user accounts,
+        and updates the knowledge graph by linking users to the SSH service running on the asset.
+
+        Args:
+            kg (GraphDB): The knowledge graph database storing entity relationships.
+            artefacts (ArtefactManager): Manages stored artefacts.
+            pattern (Pattern): Contains asset-related information.
+            output (list[str]): The list of discovered file paths.
+
+        Returns:
+            StateChangeSequence: A sequence of state changes to be applied to the knowledge graph.
+        """
         changes: StateChangeSequence = []
+
         ssh_users = get_ssh_user_accounts(output)
+
         asset = pattern.get('asset')
-        ftp_service = Entity('Service', alias='ftp_service', protocol='ftp')
-        ssh_service = Entity('Service', alias='ssh_service', protocol='ssh')
-        is_running = Relationship('is_running', direction='r')
-        asset_port = asset.with_edge(Relationship('has', direction='r')).with_node(Entity('OpenPort'))
-        asset_ftp_pattern = asset_port.with_edge(is_running).with_node(ftp_service)
-        asset_ssh_pattern = asset_port.with_edge(is_running).with_node(ssh_service)
+        ssh_service = Ent('Service', alias='ssh_service', protocol='ssh')
+        is_running = Rel('is_running')
+        asset_port = asset - Rel('has') - Ent('OpenPort')
+        asset_ssh_pattern = asset_port - is_running - ssh_service
+
         if len(ssh_users) > 0:
             changes.append((asset, 'merge_if_not_match', asset_ssh_pattern))
+
         for index, user in enumerate(ssh_users):
-            user_entity = Entity('User', alias=f'user{index}', username=user)
-            user_ftp_pattern = ftp_service.with_edge(Relationship('is_client', direction='l')).with_node(user_entity)
-            changes.append((asset_ftp_pattern, 'merge_if_not_match', user_ftp_pattern))
-            user_pattern = asset_ftp_pattern.with_edge(Relationship('is_client', direction='l')).with_node(user_entity)
-            user_ssh_pattern = ssh_service.with_edge(Relationship('is_client', direction='l')).with_node(user_entity)
-            combined = asset_ssh_pattern.combine(user_pattern)
-            changes.append((combined, 'merge_if_not_match', user_ssh_pattern))
+            user = Ent('User', alias=f'user{index}', username=user)
+            changes.extend(safe_add_user(asset, ssh_service, user))
+            
         return changes
