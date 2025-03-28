@@ -38,23 +38,24 @@ class BusyBoxGTFO(Action):
         pattern = (
             Entity(type='User', alias='user')
             .with_edge(Relationship(type='has'))
-            .with_node(Entity(type='Permission', alias='permission', command='/usr/bin/busybox'))
+            .with_node(Entity(type='Permission', alias='permission'))
             .combine(session)
         )
-        return kg.match(pattern).where('user.username = session.username')
+        return kg.match(pattern).where('(user.username = session.username) AND (session.active = true) AND NOT (session.protocol = "busybox")')
 
     def function(self, sessions: SessionManager, artefacts: ArtefactManager, pattern: Pattern) -> ActionExecutionResult:
         """
         Establish busybox session as another user.
         """
-        session = pattern.get('session')
-        session_id = session.get("id")
+        tulpa_session = pattern.get('session')
+        tulpa_session_id = tulpa_session.get('id')
         permission = pattern.get('permission')
         as_user = permission.get('as_user')
-        channel = sessions.get_session(session_id)
-        cmd = ["sudo", "-u", as_user, "busybox", "sh"]
-        output = run_command(channel, " ".join(cmd))
-        return ActionExecutionResult(command=cmd, session=session_id, stdout="\n".join(output))
+
+        live_session = sessions.get_session(tulpa_session_id)
+        cmd = f"sudo -u {as_user} busybox sh"
+        output = live_session.run_command(cmd)
+        return ActionExecutionResult(command=[cmd], session=tulpa_session_id, stdout=output)
 
     def capture_state_change(
         self, kg: GraphDB, artefacts: ArtefactManager, pattern: Pattern, output: ActionExecutionResult
