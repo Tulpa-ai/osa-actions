@@ -33,18 +33,18 @@ class PasswordlessSudoCheck(Action):
         """
         session = Entity(type='Session', alias='session')
         res = kg.match(session).where("""session.listed_sudo_permissions IS NULL""")
-        ret = [p for p in res if p.get('session').get('protocol') in ['ssh', 'busybox']]
+        ret = [p for p in res if p.get('session').get('protocol') in ['ssh', 'busybox', 'shell']]
         return ret
 
     def function(self, sessions: SessionManager, artefacts: ArtefactManager, pattern: Pattern) -> ActionExecutionResult:
         """
         Run sudo -l command in the session.
         """
-        session = pattern.get('session')
-        session_id = session.get('id')
-        channel = sessions.get_session(session_id)
-        output = run_command(channel, "sudo -l")
-        return ActionExecutionResult(command=["sudo -l"], stdout="\n".join(output), session=session_id)
+        tulpa_session = pattern.get('session')
+        tulpa_session_id = tulpa_session.get('id')
+        live_session = sessions.get_session(tulpa_session_id)
+        output = live_session.run_command("sudo -l")
+        return ActionExecutionResult(command=["sudo -l"], stdout=output, session=tulpa_session_id)
 
     def capture_state_change(
         self, kg: GraphDB, artefacts: ArtefactManager, pattern: Pattern, output: ActionExecutionResult
@@ -61,11 +61,14 @@ class PasswordlessSudoCheck(Action):
             if "NOPASSWD" in line:
                 sudo_usr = line.split(")")[0].strip()[1:]
                 command = line.split("NOPASSWD:")[-1].strip()
-                user = Entity(type='User', alias='user', username=user)
-                merge_pattern = user.with_edge(Relationship(type='has', direction='r')).with_node(
+                if user:
+                    link_node = Entity(type='User', alias='user', username=user)
+                else:
+                    link_node = session.copy()
+                merge_pattern = link_node.with_edge(Relationship(type='has', direction='r')).with_node(
                     Entity(type='Permission', name=command, command=command, as_user=sudo_usr)
                 )
-                changes.append((user, "merge", merge_pattern))
+                changes.append((link_node, "merge_if_not_match", merge_pattern))
 
         new_session = session.copy()
         new_session.set('listed_sudo_permissions', True)
