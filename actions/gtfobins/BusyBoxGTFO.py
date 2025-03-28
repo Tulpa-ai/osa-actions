@@ -24,14 +24,10 @@ class BusyBoxGTFO(Action):
         """
         Return expected outcome of action.
         """
-        user = pattern.get('user')
+        user = pattern.get('user').get('username')
         session = pattern.get('session')._id
         permission = pattern.get('permission')._id
-        if user:
-            username = user.get('username')
-            return [f"Change user to {username} in session ({session}) with permission ({permission})"]
-        else:
-            return [f"Change to busybox session ({session}) with permission ({permission})"]
+        return [f"Change user to {user} in session ({session}) with permission ({permission})"]
 
     def get_target_patterns(self, kg: GraphDB) -> list[Union[Pattern, MultiPattern]]:
         """
@@ -42,15 +38,10 @@ class BusyBoxGTFO(Action):
         pattern = (
             Entity(type='User', alias='user')
             .with_edge(Relationship(type='has'))
-            .with_node(Entity(type='Permission', alias='permission', command='/usr/bin/busybox'))
+            .with_node(Entity(type='Permission', alias='permission'))
             .combine(session)
         )
-        pattern_root = session.with_edge(Relationship(type='has')).with_node(
-            Entity(type='Permission', alias='permission', command='/bin/busybox')
-        )
-        return kg.match(pattern).where('user.username = session.username') + kg.match(pattern_root).where(
-            'permission.as_user = root'
-        )
+        return kg.match(pattern).where('(user.username = session.username) AND (session.active = true) AND NOT (session.protocol = "busybox")')
 
     def function(self, sessions: SessionManager, artefacts: ArtefactManager, pattern: Pattern) -> ActionExecutionResult:
         """
@@ -62,9 +53,9 @@ class BusyBoxGTFO(Action):
         as_user = permission.get('as_user')
 
         live_session = sessions.get_session(tulpa_session_id)
-        cmd = f"sudo -l {as_user} busybox sh"
+        cmd = f"sudo -u {as_user} busybox sh"
         output = live_session.run_command(cmd)
-        return ActionExecutionResult(command=cmd, session=tulpa_session_id, stdout=output)
+        return ActionExecutionResult(command=[cmd], session=tulpa_session_id, stdout=output)
 
     def capture_state_change(
         self, kg: GraphDB, artefacts: ArtefactManager, pattern: Pattern, output: ActionExecutionResult

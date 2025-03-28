@@ -31,8 +31,8 @@ class PasswordlessSudoCheck(Action):
         """
         get_target_patterns check to find a session.
         """
-        session = Entity(type='Session', alias='session')
-        res = kg.match(session).where("""session.listed_sudo_permissions IS NULL""")
+        pattern = Entity(type='Session', alias='session').combine(Entity(type='Service', alias='service'))
+        res = kg.match(pattern).where("""session.listed_sudo_permissions IS NULL""")
         ret = [p for p in res if p.get('session').get('protocol') in ['ssh', 'busybox', 'shell']]
         return ret
 
@@ -53,6 +53,7 @@ class PasswordlessSudoCheck(Action):
         Update knowledge graph with the discovered command permissions.
         """
         session = pattern.get('session')
+        service = pattern.get('service')
         user = session.get('username')
         lines = output.stdout.strip().split("\n")
 
@@ -63,12 +64,25 @@ class PasswordlessSudoCheck(Action):
                 command = line.split("NOPASSWD:")[-1].strip()
                 if user:
                     link_node = Entity(type='User', alias='user', username=user)
-                else:
-                    link_node = session.copy()
-                merge_pattern = link_node.with_edge(Relationship(type='has', direction='r')).with_node(
-                    Entity(type='Permission', name=command, command=command, as_user=sudo_usr)
-                )
-                changes.append((link_node, "merge_if_not_match", merge_pattern))
+                    merge_pattern = link_node.with_edge(Relationship(type='has', direction='r')).with_node(
+                        Entity(type='Permission', name=command, command=command, as_user=sudo_usr)
+                    )
+                    changes.append((link_node, "merge", merge_pattern))
+                elif service:
+                    link_node = Entity(type='User', alias='user', username=sudo_usr)
+                    merge_pattern = link_node.with_edge(Relationship(type='is_running', direction='r')).with_node(
+                        service
+                    )
+                    changes.append((service, "merge", merge_pattern))
+
+                    merge_pattern = link_node.with_edge(Relationship(type='has', direction='r')).with_node(
+                        Entity(type='Permission', name=command, command=command, as_user=sudo_usr)
+                    )
+                    changes.append((link_node, "merge", merge_pattern))
+
+                    update_session = session.copy()
+                    update_session.set('username', sudo_usr)
+                    changes.append((session, "update", update_session))
 
         new_session = session.copy()
         new_session.set('listed_sudo_permissions', True)
