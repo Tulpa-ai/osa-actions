@@ -56,13 +56,13 @@ class IpRoute(Action):
         """
         Use execute ip route.
         """
-        session: Entity = pattern.get('session')
-        session_id = session.get("id")
-        channel = sessions.get_session(session_id)
-        output = run_command(channel, "ip route")
+        tulpa_session = pattern.get('session')
+        tulpa_session_id = tulpa_session.get('id')
+        live_session = sessions.get_session(tulpa_session_id)
+        output = live_session.run_command("ip route")
         exit_status = 1 if "ip: not found" in output else 0
         result = ActionExecutionResult(
-            command=["ip", "route"], stdout="".join(output), exit_status=exit_status, session=session_id
+            command=["ip", "route"], stdout="".join(output), exit_status=exit_status, session=tulpa_session_id
         )
         return result
 
