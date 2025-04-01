@@ -4,7 +4,7 @@ import paramiko
 
 from action_state_interface.action import Action, StateChangeSequence
 from action_state_interface.action_utils import run_command
-from action_state_interface.actions.ftp.FtpRecursiveFileSearch import filter_files_by_wordlist
+from builtin_actions.ftp.FtpRecursiveFileSearch import filter_files_by_wordlist  # isort:skip
 from artefacts.ArtefactManager import ArtefactManager
 from kg_api import Entity, GraphDB, MultiPattern, Pattern, Relationship
 from Session import SessionManager

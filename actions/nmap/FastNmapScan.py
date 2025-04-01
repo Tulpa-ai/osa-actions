@@ -10,7 +10,7 @@ from artefacts.ArtefactManager import ArtefactManager
 from kg_api import Entity, GraphDB, Pattern, Relationship, MultiPattern
 from Session import SessionManager
 
-base_path = pathlib.Path(__file__).parent.parent.parent.parent
+base_path = pathlib.Path(__file__).parent.parent.parent
 NON_ATTACK_IPS = get_non_attack_ips(base_path / 'non_attack_ips.txt')
 
 class FastNmapScan(Action):
