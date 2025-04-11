@@ -110,7 +110,7 @@ class LocalRecursiveFileSearch(Action):
         wordlist.discard('')
         session: Entity = pattern.get('session')
         session_id = session.get('id')
-        ssh_session = sessions.get_session(session_id)
+        ssh_session = sessions.get_session(session_id).get_session_object()
         all_files = list_files(ssh_session)
         interesting_files = filter_files_by_wordlist(all_files, wordlist)
         ip = pattern.get('asset').get('ip_address')
