@@ -7,6 +7,7 @@ from action_state_interface.action_utils import shell
 from action_state_interface.exec import ActionExecutionError, ActionExecutionResult
 from artefacts.ArtefactManager import ArtefactManager
 from kg_api import Entity, GraphDB, MultiPattern, Pattern, Relationship
+from kg_api.query import Query
 from Session import SessionManager
 
 
@@ -54,7 +55,7 @@ class SshLoginPubkey(Action):
             f"Gain access to {ip} as {user} ({user_id}) using ssh key from file {file} ({file_id}) in directory {directory} ({directory_id})"
         ]
 
-    def get_target_patterns(self, kg: GraphDB) -> list[Union[Pattern, MultiPattern]]:
+    def get_target_query(self) -> Query:
         """
         get_target_patterns check to identify SSH service entities, and derive login
         credentials from directory names and id files.
@@ -63,12 +64,17 @@ class SshLoginPubkey(Action):
         service = Entity('Service', alias='service', protocol='ssh')
         directory = Entity(type='Directory', alias='directory')
         file = Entity(type='File', alias='file', filename='id_rsa')
+        user = Entity(type='User', alias='user')
         p1 = asset.directed_path_to(directory).directed_path_to(file)
-        p2 = Entity(type='User', alias='user').with_edge(Relationship('is_client', direction='r')).with_node(service)
+        p2 = user.with_edge(Relationship('is_client', direction='r')).with_node(service)
         p3 = asset.directed_path_to(service)
         pattern = p1.combine(p2).combine(p3)
-        res = kg.match(pattern).where('user.username = directory.dirname AND file.artefact_id IS NOT NULL')
-        return res
+        query = Query()
+        query.match(pattern)
+        query.where(user.username == directory.dirname)
+        query.where(file.artefact_id.is_not_null())
+        query.ret_all()
+        return query
 
     def function(self, sessions: SessionManager, artefacts: ArtefactManager, pattern: Pattern) -> ActionExecutionResult:
         """

@@ -7,6 +7,7 @@ from action_state_interface.action_utils import shell
 from action_state_interface.exec import ActionExecutionResult
 from artefacts.ArtefactManager import ArtefactManager
 from kg_api import Ent, GraphDB, MultiPattern, Pattern, Rel
+from kg_api.query import Query
 from kg_api.utils import safe_add_user
 from Session import SessionManager
 
@@ -31,15 +32,18 @@ class HydraBruteForceAction(Action):
             f"on {pattern.get('asset').get('ip_address')}"
         ]
 
-    def get_target_patterns(self, kg: GraphDB) -> list[Union[Pattern, MultiPattern]]:
+    def get_target_query(self) -> Query:
         """
         Identify target patterns with Asset -> Path -> Service (selected service).
         """
         asset = Ent('Asset', alias='asset')
         service = Ent('Service', alias='service')
         pattern = asset.directed_path_to(service)
-        matches = kg.get_matching(pattern)
-        return [p for p in matches if p.get('service').get('protocol') in ['ftp', 'ssh']]
+        query = Query()
+        query.match(pattern)
+        query.where(service.protocol.is_in(['ftp', 'ssh']))
+        query.ret_all()
+        return query
 
     def function(self, sessions: SessionManager, artefacts: ArtefactManager, pattern: Pattern) -> ActionExecutionResult:
         """

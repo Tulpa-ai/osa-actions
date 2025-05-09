@@ -6,6 +6,7 @@ from action_state_interface.action import Action, StateChangeSequence
 from action_state_interface.exec import ActionExecutionResult
 from artefacts.ArtefactManager import ArtefactManager
 from kg_api import Entity, GraphDB, MultiPattern, Pattern, Relationship
+from kg_api.query import Query
 from Session import SessionManager
 
 
@@ -51,7 +52,7 @@ class SshLoginWithCredentials(Action):
             f"Gain access to {ip} as {user} ({user_id}) using credentials ({credentials}) via SSH service ({service})"
         ]
 
-    def get_target_patterns(self, kg: GraphDB) -> list[Union[Pattern, MultiPattern]]:
+    def get_target_query(self) -> Query:
         """
         get_target_patterns check to identify SSH service entities, and derive login
         credentials from directory names and id files.
@@ -68,8 +69,12 @@ class SshLoginWithCredentials(Action):
             .with_node(credentials)
             .combine(user.with_edge(is_client).with_node(service))
         )
-        res = kg.match(pattern).where('user.username = credentials.username AND credentials.password IS NOT NULL')
-        return res
+        query = Query()
+        query.match(pattern)
+        query.where(user.username == credentials.username)
+        query.where(credentials.password.is_not_null())
+        query.ret_all()
+        return query
 
     def function(self, sessions: SessionManager, artefacts: ArtefactManager, pattern: Pattern) -> ActionExecutionResult:
         """

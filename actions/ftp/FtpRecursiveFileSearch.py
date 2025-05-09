@@ -4,6 +4,7 @@ from ftplib import FTP, error_perm
 from fuzzywuzzy import fuzz
 from action_state_interface.action import Action, StateChangeSequence
 from kg_api import Entity, GraphDB, MultiPattern, Pattern, Relationship
+from kg_api.query import Query
 from Session import SessionManager
 
 FILES_AND_DIRS_TO_IGNORE = ['.', '..']
@@ -64,7 +65,7 @@ class FtpRecursiveFileSearch(Action):
         service = pattern.get('service')._id
         return [f"Search for interesting files on FTP service ({service}) on {ip}"]
 
-    def get_target_patterns(self, kg: GraphDB) -> list[Union[Pattern, MultiPattern]]:
+    def get_target_query(self) -> Query:
         session = Entity('Session', alias='session', protocol='ftp')
         asset = Entity('Asset', alias='asset')
         service = Entity('Service', alias='service', protocol='ftp')
@@ -76,8 +77,11 @@ class FtpRecursiveFileSearch(Action):
             .combine(session)
         )
         negate_pattern = service.directed_path_to(Entity('File'))
-        res = kg.match(match_pattern).where_not(negate_pattern)
-        return res
+        query = Query()
+        query.match(match_pattern)
+        query.where(negate_pattern, _not=True)
+        query.ret_all()
+        return query
 
     def function(self, sessions: SessionManager, artefacts, pattern: Pattern) -> str:
         uuid = artefacts.search('interesting_file_names.txt')[0]

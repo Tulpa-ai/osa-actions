@@ -5,7 +5,8 @@ from action_state_interface.action import Action, StateChangeSequence
 from action_state_interface.action_utils import shell
 from action_state_interface.exec import ActionExecutionError, ActionExecutionResult
 from artefacts.ArtefactManager import ArtefactManager
-from kg_api import Entity, GraphDB, Pattern, Relationship, MultiPattern
+from kg_api import Entity, GraphDB, Pattern, MultiPattern
+from kg_api.query import Query
 from Session import SessionManager
 
 # Helper function for Banner extraction
@@ -29,12 +30,14 @@ class NmapBannerScan(Action):
         port_proto = pattern.get("port").get("protocol")
         return [f"Capture the banner for port {port_num}/{port_proto} on {pattern.get('asset').get('ip_address')}"]
 
-    def get_target_patterns(self, kg: GraphDB) -> list[Union[Pattern, MultiPattern]]:
+    def get_target_query(self) -> Query:
         asset = Entity('Asset', alias='asset')
         port = Entity('OpenPort', alias='port')
         match_pattern = asset.directed_path_to(port)
-        res = kg.get_matching(match_pattern)
-        return res
+        query = Query()
+        query.match(match_pattern)
+        query.ret_all()
+        return query
 
     def function(self, sessions: SessionManager, artefacts: ArtefactManager, pattern: Pattern) -> ActionExecutionResult:
         asset = pattern.get('asset')
