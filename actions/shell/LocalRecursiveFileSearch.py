@@ -7,6 +7,7 @@ from action_state_interface.action_utils import run_command
 from builtin_actions.ftp.FtpRecursiveFileSearch import filter_files_by_wordlist  # isort:skip
 from artefacts.ArtefactManager import ArtefactManager
 from kg_api import Entity, GraphDB, MultiPattern, Pattern, Relationship
+from kg_api.query import Query
 from Session import SessionManager
 
 
@@ -65,7 +66,7 @@ class LocalRecursiveFileSearch(Action):
             f"Search for interesting files on the file system of {ip} with discovered credentials ({creds}) via SSH service ({service}) using session ({session})"
         ]
 
-    def get_target_patterns(self, kg: GraphDB) -> list[Union[Pattern, MultiPattern]]:
+    def get_target_query(self) -> Query:
         """
         Identify target patterns where the search operation should be performed.
 
@@ -87,8 +88,11 @@ class LocalRecursiveFileSearch(Action):
             .with_node(credentials)
             .combine(session)
         )
-        res = kg.match(match_pattern).where("credentials.username = session.username")
-        return res
+        query = Query()
+        query.match(match_pattern)
+        query.where(credentials.username == session.username)
+        query.ret_all()
+        return query
 
     def function(self, sessions: SessionManager, artefacts: ArtefactManager, pattern: Pattern) -> str:
         """

@@ -3,9 +3,10 @@ from typing import Union
 
 from action_state_interface.action import Action, StateChangeSequence
 from action_state_interface.action_utils import shell
-from action_state_interface.exec import ActionExecutionError, ActionExecutionResult
+from action_state_interface.exec import ActionExecutionResult
 from artefacts.ArtefactManager import ArtefactManager
 from kg_api import Entity, GraphDB, Pattern, Relationship, MultiPattern
+from kg_api.query import Query
 from Session import SessionManager
 
 class HttpServiceScan(Action):
@@ -26,7 +27,7 @@ class HttpServiceScan(Action):
         service = pattern.get('service')._id
         return [f"Gain knowledge to gain access to {ip} via service ({service})"]
 
-    def get_target_patterns(self, kg: GraphDB) -> list[Union[Pattern, MultiPattern]]:
+    def get_target_query(self) -> Query:
         """
         get_target_patterns check looking for assets which are running an HTTP service.
         """
@@ -34,8 +35,12 @@ class HttpServiceScan(Action):
         http_service = Entity('Service', alias='service', protocol='http')
         match_pattern = asset.directed_path_to(http_service)
         negate_pattern = http_service.directed_path_to(Entity('Directory'))
-        res = kg.match(match_pattern).where_not(negate_pattern)
-        return [p for p in res if not p.get('service').get('self_spawned')]
+        query = Query()
+        query.match(match_pattern)
+        query.where_not(negate_pattern)
+        query.where(http_service.self_spawned.is_null())
+        query.ret_all()
+        return query
 
     def function(self, sessions: SessionManager, artefacts: ArtefactManager, pattern: Pattern) -> ActionExecutionResult:
         """

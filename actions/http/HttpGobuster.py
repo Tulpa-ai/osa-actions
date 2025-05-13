@@ -6,6 +6,7 @@ from action_state_interface.action_utils import shell
 from action_state_interface.exec import ActionExecutionResult
 from artefacts.ArtefactManager import ArtefactManager
 from kg_api import Entity, GraphDB, MultiPattern, Pattern, Relationship
+from kg_api.query import Query
 from Session import SessionManager
 
 def cmd_discover_webapp_files_and_folders(
@@ -42,14 +43,17 @@ class HttpGobuster(Action):
         service = pattern.get('service')._id
         return [f"Gain knowledge to gain access to {ip} via HTTP service ({service})"]
 
-    def get_target_patterns(self, kg: GraphDB) -> list[Union[Pattern, MultiPattern]]:
+    def get_target_query(self) -> Query:
         """
         get_target_patterns check looking for HTTP services, drives and directories.
         """
         asset = Entity('Asset', alias='asset')
         service = Entity('Service', alias='service', protocol='http')
         pattern = asset.directed_path_to(service)
-        return kg.get_matching(pattern)
+        query = Query()
+        query.match(pattern)
+        query.ret_all()
+        return query
 
     def function(self, sessions: SessionManager, artefacts: ArtefactManager, pattern: Pattern) -> ActionExecutionResult:
         """

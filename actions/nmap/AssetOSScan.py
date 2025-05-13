@@ -5,7 +5,8 @@ from action_state_interface.action import Action, StateChangeSequence
 from action_state_interface.action_utils import shell
 from action_state_interface.exec import ActionExecutionError, ActionExecutionResult
 from artefacts.ArtefactManager import ArtefactManager
-from kg_api import Entity, GraphDB, Pattern, Relationship, MultiPattern
+from kg_api import Entity, GraphDB, Pattern, MultiPattern
+from kg_api.query import Query
 from Session import SessionManager
 
 # Helper function for OS scan parsing
@@ -28,9 +29,12 @@ class AssetOSScan(Action):
     def expected_outcome(self, pattern: Pattern) -> list[str]:
         return [f"Gain knowledge of the OS on {pattern.get('asset').get('ip_address')}"]
 
-    def get_target_patterns(self, kg: GraphDB) -> list[Union[Pattern, MultiPattern]]:
+    def get_target_query(self) -> Query:
         asset = Entity('Asset', alias='asset')
-        return kg.get_matching(asset)
+        query = Query()
+        query.match(asset)
+        query.ret_all()
+        return query
 
     def function(self, sessions: SessionManager, artefacts: ArtefactManager, pattern: Pattern) -> ActionExecutionResult:
         asset = pattern.get('asset')

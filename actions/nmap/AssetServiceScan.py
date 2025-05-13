@@ -6,6 +6,7 @@ from action_state_interface.action_utils import shell
 from action_state_interface.exec import ActionExecutionError, ActionExecutionResult
 from artefacts.ArtefactManager import ArtefactManager
 from kg_api import Entity, GraphDB, Pattern, Relationship, MultiPattern
+from kg_api.query import Query
 from Session import SessionManager
 
 # Supporting parser functions
@@ -54,9 +55,12 @@ class AssetServiceScan(Action):
 			f"Gain knowledge of network services on {pattern.get('asset').get('ip_address')}. May include additional details for some services, such as indicating if anonymous FTP is supported.",
 		]
 
-	def get_target_patterns(self, kg: GraphDB) -> list[Union[Pattern, MultiPattern]]:
+	def get_target_query(self) -> Query:
 		asset = Entity('Asset', alias='asset')
-		return kg.get_matching(asset)
+		query = Query()
+		query.match(asset)
+		query.ret_all()
+		return query
 
 	def function(self, sessions: SessionManager, artefacts: ArtefactManager, pattern: Pattern) -> ActionExecutionResult:
 		asset = pattern.get('asset')

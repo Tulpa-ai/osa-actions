@@ -6,6 +6,7 @@ from action_state_interface.action_utils import run_command
 from action_state_interface.exec import ActionExecutionResult
 from artefacts.ArtefactManager import ArtefactManager
 from kg_api import Entity, GraphDB, MultiPattern, Pattern, Relationship
+from kg_api.query import Query
 from Session import SessionManager
 
 
@@ -27,15 +28,15 @@ class IpRoute(Action):
         """
         return [f"Gain knowledge of network routes from {pattern.get('asset').get('ip_address')}"]
 
-    def get_target_patterns(self, kg: GraphDB) -> list[Union[Pattern, MultiPattern]]:
+    def get_target_query(self) -> Query:
         """
         get_target_patterns check for IP route. This action finds other subnets that can be scanned.
         """
         session = Entity('Session', alias='session')
         # NB: this basic session type check will need to be removed when we do session management properly
-        matching_sessions = kg.match(session).where("NOT session.protocol IN ['rsh', 'ftp', 'msf']")
-        if not matching_sessions:
-            return []
+        # matching_sessions = kg.match(session).where("NOT session.protocol IN ['rsh', 'ftp', 'msf']")
+        # if not matching_sessions:
+        #     return []
 
         asset = Entity('Asset', alias='asset')
         service = Entity('Service', alias='service')
@@ -47,10 +48,15 @@ class IpRoute(Action):
             .combine(session)
         )
 
-        res = kg.match(match_pattern).where(
-            f"id(service) IN {[s.get('session').get('executes_on') for s in matching_sessions]} AND NOT session.protocol IN ['rsh', 'ftp', 'msf']"
-        )
-        return res
+        # res = kg.match(match_pattern).where(
+        #     f"id(service) IN {[s.get('session').get('executes_on') for s in matching_sessions]} AND NOT session.protocol IN ['rsh', 'ftp', 'msf']"
+        # )
+        query = Query()
+        query.match(match_pattern)
+        query.where(service.id() == session.executes_on)
+        query.where_not(session.protocol.is_in(['rsh', 'ftp', 'msf']))
+        query.ret_all()
+        return query
 
     def function(self, sessions: SessionManager, artefacts: ArtefactManager, pattern: Pattern) -> ActionExecutionResult:
         """

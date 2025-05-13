@@ -5,6 +5,7 @@ from ftplib import FTP, error_perm
 from action_state_interface.action import Action, StateChangeSequence
 from action_state_interface.exec import ActionExecutionError, ActionExecutionResult
 from kg_api import Entity, GraphDB, MultiPattern, Pattern, Relationship
+from kg_api.query import Query
 from Session import SessionManager
 
 def download_file(ftp, remote_file_path, local_file_path):
@@ -32,7 +33,7 @@ class FtpDownloadFile(Action):
         service = pattern.get('service')._id
         return [f"Download file {filename} from FTP service ({service}) on {ip} using session ({session})"]
 
-    def get_target_patterns(self, kg: GraphDB) -> list[Union[Pattern, MultiPattern]]:
+    def get_target_query(self) -> Query:
         session = Entity('Session', alias='session', protocol='ftp')
         asset = Entity('Asset', alias='asset')
         service = Entity('Service', alias='service', protocol='ftp')
@@ -47,7 +48,10 @@ class FtpDownloadFile(Action):
         file_pattern = drive.directed_path_to(Entity('File', alias='file'))
         file_pattern.set_alias('path')
         match_pattern = service_pattern.combine(file_pattern).combine(session)
-        return kg.get_matching(match_pattern)
+        query = Query()
+        query.match(match_pattern)
+        query.ret_all()
+        return query
 
     def function(self, sessions: SessionManager, artefacts, pattern: Pattern) -> ActionExecutionResult:
         session = pattern.get('session')

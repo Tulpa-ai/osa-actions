@@ -5,6 +5,7 @@ from action_state_interface.action_utils import run_command
 from action_state_interface.exec import ActionExecutionResult
 from artefacts.ArtefactManager import ArtefactManager
 from kg_api import Entity, GraphDB, MultiPattern, Pattern, Relationship
+from kg_api.query import Query
 from Session import SessionManager
 
 
@@ -29,19 +30,24 @@ class MakeGTFO(Action):
         permission = pattern.get('permission')._id
         return [f"Change user to {user} in session ({session}) with permission ({permission})"]
 
-    def get_target_patterns(self, kg: GraphDB) -> list[Union[Pattern, MultiPattern]]:
+    def get_target_query(self) -> Query:
         """
         get_target_patterns check to identify a user with permission to run the make
         command as root.
         """
         session = Entity('Session', alias='session')
+        user = Entity(type='User', alias='user')
         pattern = (
-            Entity(type='User', alias='user')
+            user
             .with_edge(Relationship(type='has'))
             .with_node(Entity(type='Permission', alias='permission', command='/usr/bin/make'))
             .combine(session)
         )
-        return kg.match(pattern).where('user.username = session.username')
+        query = Query()
+        query.match(pattern)
+        query.where(user.username == session.username)
+        query.ret_all()
+        return query
 
     def function(
         self, sessions: SessionManager, artefacts: ArtefactManager, pattern: MultiPattern

@@ -3,6 +3,7 @@ from typing import Union
 from action_state_interface.action import Action, StateChangeSequence
 from action_state_interface.exec import ActionExecutionResult
 from kg_api import Entity, GraphDB, MultiPattern, Pattern, Relationship
+from kg_api.query import Query
 from Session import SessionManager
 
 class FTPLoginWithCredentials(Action):
@@ -17,7 +18,7 @@ class FTPLoginWithCredentials(Action):
         service = pattern.get('service')._id
         return [f"Gain a session on FTP service ({service}) on {ip} as user: {user}"]
 
-    def get_target_patterns(self, kg: GraphDB) -> list[Union[Pattern, MultiPattern]]:
+    def get_target_query(self) -> Query:
         asset = Entity('Asset', alias='asset')
         service = Entity('Service', alias='service', protocol='ftp')
         creds = Entity('Credentials', alias='credentials')
@@ -29,7 +30,11 @@ class FTPLoginWithCredentials(Action):
             .with_edge(Relationship('secured_with', direction='l'))
             .with_node(creds)
         )
-        return kg.match(pattern).where("credentials.username <> 'anonymous'")
+        query = Query()
+        query.match(pattern)
+        query.where(creds.username != 'anonymous')
+        query.ret_all()
+        return query
 
     def function(self, sessions: SessionManager, artefacts, pattern: Pattern) -> ActionExecutionResult:
         asset = pattern.get('asset')

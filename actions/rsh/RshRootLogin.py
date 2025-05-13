@@ -5,6 +5,7 @@ from action_state_interface.action_utils import shell
 from action_state_interface.exec import ActionExecutionError, ActionExecutionResult
 from artefacts.ArtefactManager import ArtefactManager
 from kg_api import Entity, GraphDB, MultiPattern, Pattern, Relationship
+from kg_api.query import Query
 from Session import SessionManager
 
 
@@ -24,25 +25,19 @@ class RshRootLogin(Action):
         """
         return [f"Utilise RSH in an attempt to obtain root access on {pattern.get('asset').get('ip_address')}"]
 
-    def get_target_patterns(self, kg: GraphDB) -> list[Union[Pattern, MultiPattern]]:
+    def get_target_query(self) -> Query:
         """
         get_target_patterns check to identify rsh ports.
         """
         asset = Entity('Asset', alias='asset')
         port = Entity('OpenPort', alias='port')
         pattern = asset.with_edge(Relationship('has', direction='r')).with_node(port)
-        matches = kg.match(pattern).where('port.number IN [512, 513, 514]')
-
-        ip_set = {}
-        for match in matches:
-            ip = match.get('asset').get('ip_address')
-            if ip in ip_set:
-                continue
-            else:
-                ip_set[ip] = []
-                ip_set[ip].append(match)
-
-        return [p[0] for p in ip_set.values()]
+        query = Query()
+        query.match(pattern)
+        query.where(port.number.is_in([512, 513, 514]))
+        query.ret_all()
+        query.limit(1)
+        return query
 
     def function(self, sessions: SessionManager, artefacts: ArtefactManager, pattern: Pattern) -> ActionExecutionResult:
         """

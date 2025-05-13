@@ -8,6 +8,7 @@ from action_state_interface.action_utils import run_command, shell
 from action_state_interface.exec import ActionExecutionResult
 from artefacts.ArtefactManager import ArtefactManager
 from kg_api import Entity, GraphDB, MultiPattern, Pattern, Relationship
+from kg_api.query import Query
 from Session import SessionManager
 
 
@@ -51,7 +52,7 @@ class DiscoverSSHAuthMethods(Action):
             f"Gain SSH access to {user} ({user_id}) on {ip} via port with number {port_num}, using SSH service ({ssh_service})"
         ]
 
-    def get_target_patterns(self, kg: GraphDB) -> list[Union[Pattern, MultiPattern]]:
+    def get_target_query(self) -> Query:
         """
         get_target_patterns check looking for assets with an SSH service, and user accounts
         which are clients of another service on the same asset.
@@ -70,7 +71,11 @@ class DiscoverSSHAuthMethods(Action):
                 .with_node(user)
             )
         )
-        return kg.match(pattern).where("other_service.protocol <> 'ssh'")
+        query = Query()
+        query.match(pattern)
+        query.where(other_service.protocol != "ssh")
+        query.ret_all()
+        return query
 
     def function(self, sessions: SessionManager, artefacts: ArtefactManager, pattern: Pattern) -> ActionExecutionResult:
         """

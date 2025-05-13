@@ -8,6 +8,7 @@ from action_state_interface.action_utils import get_non_attack_ips, shell
 from action_state_interface.exec import ActionExecutionResult
 from artefacts.ArtefactManager import ArtefactManager
 from kg_api import Entity, GraphDB, Pattern, Relationship, MultiPattern
+from kg_api.query import Query
 from Session import SessionManager
 
 base_path = pathlib.Path(__file__).parent.parent.parent
@@ -33,13 +34,16 @@ class FastNmapScan(Action):
             f"Gain knowledge of network services on {pattern.get('subnet').get('network_address')}",
         ]
 
-    def get_target_patterns(self, kg: GraphDB) -> list[Union[Pattern, MultiPattern]]:
+    def get_target_query(self) -> Query:
         """
         get_target_patterns check for fast NMAP. This NMAP finds other assets on the
         network but does not identify open ports or services.
         """
         sub = Entity('Subnet', alias='subnet')
-        return kg.get_matching(sub)
+        query = Query()
+        query.match(sub)
+        query.ret_all()
+        return query
 
     def function(self, sessions: SessionManager, artefacts: ArtefactManager, pattern: Pattern) -> ActionExecutionResult:
         """

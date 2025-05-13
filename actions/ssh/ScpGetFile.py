@@ -8,6 +8,7 @@ from action_state_interface.action_utils import shell
 from action_state_interface.exec import ActionExecutionError, ActionExecutionResult
 from artefacts.ArtefactManager import ArtefactManager
 from kg_api import Entity, GraphDB, MultiPattern, Pattern, Relationship
+from kg_api.query import Query
 from Session import SessionManager
 
 
@@ -45,7 +46,7 @@ class ScpGetFile(Action):
                 filepath = filepath / g_obj.get('filename')
         return [f"Get {filepath} from {ip}"]
 
-    def get_target_patterns(self, kg: GraphDB) -> list[Union[Pattern, MultiPattern]]:
+    def get_target_query(self) -> Query:
         """
         Identifies target patterns within the knowledge graph that match conditions for
         performing the SCP action.
@@ -77,7 +78,10 @@ class ScpGetFile(Action):
             .combine(asset.connects_to(drive))
             .combine(file_pattern)
         )
-        return kg.get_matching(match_pattern)
+        query = Query()
+        query.match(match_pattern)
+        query.ret_all()
+        return query
 
     def function(self, sessions: SessionManager, artefacts: ArtefactManager, pattern: Pattern) -> ActionExecutionResult:
         """

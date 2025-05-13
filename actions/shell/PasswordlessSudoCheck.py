@@ -5,6 +5,7 @@ from action_state_interface.action_utils import run_command
 from action_state_interface.exec import ActionExecutionResult
 from artefacts.ArtefactManager import ArtefactManager
 from kg_api import Entity, GraphDB, MultiPattern, Pattern, Relationship
+from kg_api.query import Query
 from Session import SessionManager
 
 
@@ -27,14 +28,20 @@ class PasswordlessSudoCheck(Action):
         session = pattern.get('session')._id
         return [f"Gain knowledge to change user in session ({session})"]
 
-    def get_target_patterns(self, kg: GraphDB) -> list[Union[Pattern, MultiPattern]]:
+    def get_target_query(self) -> Query:
         """
         get_target_patterns check to find a session.
         """
-        pattern = Entity(type='Session', alias='session').combine(Entity(type='Service', alias='service'))
-        res = kg.match(pattern).where("""session.listed_sudo_permissions IS NULL""")
-        ret = [p for p in res if p.get('session').get('protocol') in ['ssh', 'busybox', 'shell']]
-        return ret
+        session = Entity(type='Session', alias='session')
+        pattern = session.combine(Entity(type='Service', alias='service'))
+        # res = kg.match(pattern).where("""session.listed_sudo_permissions IS NULL""")
+        # ret = [p for p in res if p.get('session').get('protocol') in ['ssh', 'busybox', 'shell']]
+        query = Query()
+        query.match(pattern)
+        query.where(session.listed_sudo_permissions.is_null())
+        query.where(session.protocol.is_in(['ssh', 'busybox', 'shell']))
+        query.ret_all()
+        return query
 
     def function(self, sessions: SessionManager, artefacts: ArtefactManager, pattern: Pattern) -> ActionExecutionResult:
         """

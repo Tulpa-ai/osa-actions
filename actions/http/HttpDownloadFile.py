@@ -3,6 +3,7 @@ from typing import Union
 
 from action_state_interface.action import Action, StateChangeSequence
 from kg_api import Entity, GraphDB, MultiPattern, Pattern
+from kg_api.query import Query
 from action_state_interface.action_utils import shell
 from Session import SessionManager
 
@@ -33,7 +34,7 @@ class HttpDownloadFile(Action):
     def expected_outcome(self, pattern: Pattern) -> list[str]:
         return [f"Gain knowledge to gain access to {pattern.get('asset').get('ip_address')}"]
 
-    def get_target_patterns(self, kg: GraphDB) -> list[Union[Pattern, MultiPattern]]:
+    def get_target_query(self) -> Query:
         asset = Entity('Asset', alias='asset')
         port = Entity('OpenPort', alias='port')
         service = Entity('Service', alias='service', protocol='http')
@@ -41,7 +42,10 @@ class HttpDownloadFile(Action):
         directory = Entity('Directory', alias='directory', dirname='database')
         file = Entity('File', alias='file')
         pattern = asset.points_to(port).points_to(service).points_to(drive).points_to(directory).points_to(file)
-        return kg.get_matching(pattern)
+        query = Query()
+        query.match(pattern)
+        query.ret_all()
+        return query
 
     def function(self, sessions: SessionManager, pattern: Pattern) -> tuple[str, str]:
         port = pattern.get('port')

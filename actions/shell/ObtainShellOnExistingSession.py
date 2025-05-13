@@ -4,6 +4,7 @@ from action_state_interface.action import Action, StateChangeSequence
 from action_state_interface.exec import ActionExecutionResult
 from artefacts.ArtefactManager import ArtefactManager
 from kg_api import Entity, GraphDB, MultiPattern, Pattern, Relationship
+from kg_api.query import Query
 from Session import SessionManager
 
 
@@ -29,14 +30,19 @@ class ObtainShellOnExistingSession(Action):
         session = pattern.get('session')._id
         return [f"Use {session} to spawn a shell process on the target machine."]
 
-    def get_target_patterns(self, kg: GraphDB) -> list[Union[Pattern, MultiPattern]]:
+    def get_target_query(self) -> Query:
         """
         get_target_patterns check to find a valid session
         """
         session = Entity(type='Session', alias='session')
-        res = kg.match(session).where("""session.listed_sudo_permissions IS NULL""")
-        ret = [p for p in res if p.get('session').get('protocol') in ['msf']]
-        return ret
+        # res = kg.match(session).where("""session.listed_sudo_permissions IS NULL""")
+        # ret = [p for p in res if p.get('session').get('protocol') in ['msf']]
+        query = Query()
+        query.match(session)
+        query.where(session.listed_sudo_permissions.is_null())
+        query.where(session.protocol.is_in(['msf']))
+        query.ret_all()
+        return query
 
     def function(self, sessions: SessionManager, artefacts: ArtefactManager, pattern: Pattern) -> ActionExecutionResult:
         """

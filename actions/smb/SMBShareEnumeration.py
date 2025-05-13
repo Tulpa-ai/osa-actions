@@ -6,6 +6,7 @@ from action_state_interface.action_utils import shell
 from action_state_interface.exec import ActionExecutionResult
 from artefacts.ArtefactManager import ArtefactManager
 from kg_api import Entity, GraphDB, MultiPattern, Pattern, Relationship
+from kg_api.query import Query
 from Session import SessionManager
 
 
@@ -27,7 +28,7 @@ class SMBShareEnumeration(Action):
             f"Search for SMB sharepoints with anonymous logins on {pattern.get('asset').get('ip_address')} : {pattern.get('service').get('protocol')}"
         ]
 
-    def get_target_patterns(self, kg: GraphDB) -> list[Union[Pattern, MultiPattern]]:
+    def get_target_query(self) -> Query:
         """
         Retrieves target patterns from the knowledge graph.
 
@@ -44,8 +45,10 @@ class SMBShareEnumeration(Action):
             .with_edge(Relationship('is_running', direction='r'))
             .with_node(service)
         )
-        matches = kg.get_matching(pattern)
-        return matches
+        query = Query()
+        query.match(pattern)
+        query.ret_all()
+        return query
 
     def function(self, sessions: SessionManager, artefacts: ArtefactManager, pattern: Pattern) -> ActionExecutionResult:
         """

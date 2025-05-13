@@ -5,6 +5,7 @@ from action_state_interface.action import Action, StateChangeSequence
 from action_state_interface.action_utils import shell
 from action_state_interface.exec import ActionExecutionResult
 from kg_api import Entity, GraphDB, MultiPattern, Pattern, Relationship
+from kg_api.query import Query
 from artefacts.ArtefactManager import ArtefactManager
 from Session import SessionManager
 
@@ -26,14 +27,17 @@ class HttpGetAllPages(Action):
         service = pattern.get('service')._id
         return [f"Gain knowledge to gain access to {ip} via HTTP service ({service})"]
 
-    def get_target_patterns(self, kg: GraphDB) -> list[Union[Pattern, MultiPattern]]:
+    def get_target_query(self) -> Query:
         """
         get_target_patterns check to identify an asset with a HTTP service.
         """
         asset = Entity('Asset', alias='asset')
         service = Entity('Service', alias='service', protocol='http')
         pattern = asset.directed_path_to(service)
-        return kg.get_matching(pattern)
+        query = Query()
+        query.match(pattern)
+        query.ret_all()
+        return query
 
     def function(self, sessions: SessionManager, artefacts: ArtefactManager, pattern: Pattern) -> ActionExecutionResult:
         """
