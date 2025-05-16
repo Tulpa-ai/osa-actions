@@ -2,9 +2,10 @@ import pathlib
 import re
 from collections import defaultdict
 from typing import Union
+from ipaddress import ip_address
 
 from action_state_interface.action import Action, StateChangeSequence
-from action_state_interface.action_utils import get_non_attack_ips, shell
+from action_state_interface.action_utils import get_attack_ips, get_non_attack_ips, shell
 from action_state_interface.exec import ActionExecutionResult
 from artefacts.ArtefactManager import ArtefactManager
 from kg_api import Entity, GraphDB, Pattern, Relationship, MultiPattern
@@ -12,7 +13,6 @@ from kg_api.query import Query
 from Session import SessionManager
 
 base_path = pathlib.Path(__file__).parent.parent.parent
-NON_ATTACK_IPS = get_non_attack_ips(base_path / 'non_attack_ips.txt')
 
 class FastNmapScan(Action):
     """
@@ -49,10 +49,23 @@ class FastNmapScan(Action):
         """
         Use execute function from action_utils to perform NMAP scan.
         """
+        NON_ATTACK_IPS = get_non_attack_ips(base_path / 'non_attack_ips.txt')
+        ATTACK_IPS = get_attack_ips(base_path / 'attack_ips.txt')
+
         subnet = pattern.get('subnet')
+        ip4_attack_ips = [ip for ip in ATTACK_IPS if ip_address(ip).version == 4]
+        ip4_non_attack_ips = [ip for ip in NON_ATTACK_IPS if ip_address(ip).version == 4]
+
+        if ATTACK_IPS:
+            res = shell(
+                "nmap",
+                ["-F", "-sS", "-n", " ".join(ip4_attack_ips)],
+            )
+            return res
+
         res = shell(
             "nmap",
-            ["-F", "-sS", "-n", subnet.get('network_address'), "--exclude", ",".join(NON_ATTACK_IPS)],
+            ["-F", "-sS", "-n", subnet.get('network_address'), "--exclude", ",".join(ip4_non_attack_ips)],
         )
         return res
 
