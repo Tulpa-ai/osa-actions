@@ -11,7 +11,7 @@ from Session import SessionManager
 
 # Supporting parser functions
 def ftp_nmap_parser(gdb: GraphDB, ap_pattern: Pattern, nmap_output: list, svc_kwargs: dict) -> StateChangeSequence:
-	ftp_section = re.search(r"21/tcp\s+open\s+ftp(.*?)MAC Address: ", nmap_output, re.DOTALL).group(1)
+	ftp_section = re.search(r"21/tcp\s+open\s+ftp(.*?)(?=\n\d+/tcp|\nTRACEROUTE|\Z)", nmap_output, re.DOTALL).group(1)
 	anon_login = False
 	users = []
 	anon_login_pattern = r"Anonymous FTP login allowed"
