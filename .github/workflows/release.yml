@@ -21,6 +21,9 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
       
+      - name: Switch to main branch
+        run: git checkout main
+      
       - name: Extract version from tag
         id: get_version
         run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
@@ -44,7 +47,7 @@ jobs:
           git config --local user.name "github-actions[bot]"
           git add actions/__init__.py
           git commit -m "[CI] - Update version to ${{ steps.get_version.outputs.VERSION }}"
-          git push
+          git push origin main
 
       - name: Create new tag
         if: steps.update_version.outputs.version_updated == 'true'
