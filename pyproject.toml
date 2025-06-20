@@ -1,0 +1,22 @@
+[tool.poetry]
+name = "osa-actions"
+version = "0.1.0"
+homepage = "https://github.com/Tulpa-ai/osa-actions"
+description = "Actions which can be executed by the Tulpa platform by the offensive security agent."
+authors = ["Tulpa <inbox@tulpa.ai>"]
+readme = "README.md"
+classifiers=[
+    'Development Status :: 2 - Pre-Alpha',
+    'Intended Audience :: Developers',
+    'Natural Language :: English',
+    'Programming Language :: Python :: 3',
+    'Programming Language :: Python :: 3.11',
+]
+
+[tool.poetry.dependencies]
+python = ">=3.10,<3.12"
+action-state-interface = {path = "../action-state-interface"}
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api" 
