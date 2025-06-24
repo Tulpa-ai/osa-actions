@@ -34,8 +34,6 @@ class PasswordlessSudoCheck(Action):
         """
         session = Entity(type='Session', alias='session')
         pattern = session.combine(Entity(type='Service', alias='service'))
-        # res = kg.match(pattern).where("""session.listed_sudo_permissions IS NULL""")
-        # ret = [p for p in res if p.get('session').get('protocol') in ['ssh', 'busybox', 'shell']]
         query = Query()
         query.match(pattern)
         query.where(session.listed_sudo_permissions.is_null())
@@ -77,7 +75,7 @@ class PasswordlessSudoCheck(Action):
                     changes.append((link_node, "merge", merge_pattern))
                 elif service:
                     link_node = Entity(type='User', alias='user', username=sudo_usr)
-                    merge_pattern = link_node.with_edge(Relationship(type='is_running', direction='r')).with_node(
+                    merge_pattern = link_node.with_edge(Relationship(type='is_client', direction='r')).with_node(
                         service
                     )
                     changes.append((service, "merge", merge_pattern))
