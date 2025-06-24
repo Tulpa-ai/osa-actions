@@ -5,7 +5,7 @@ import pandas as pd
 from action_state_interface.action import Action, StateChangeSequence
 from artefacts.ArtefactManager import ArtefactManager
 from Session import SessionManager
-from kg_api import Entity, Pattern, Relationship
+from kg_api import Entity, Pattern, Relationship, GraphDB
 from action_state_interface.exec import ActionExecutionResult
 from kg_api.query import Query
 
@@ -19,11 +19,16 @@ class ImportNessusScanResultsFromCSV(Action):
 
     def get_target_query(self):
         """Get the target query for the action."""
-        query = Query()
         #Maybe throw in here a check to see if the Entity has the right file location Property before allowing the action?
-        query.match(Entity('NessusScanResultFile', alias='nessus_file_location'))
+        nessus_file_entity = Entity('NessusScanResultFile', alias='nessus_file_location')
+        query = Query()
+        query.match(nessus_file_entity)
         query.ret_all()
         return query
+
+    def expected_outcome(self, pattern: Pattern) -> list[str]:
+        #return [f"Extract knowledge of the network from {pattern.get('nessus_file_location').get('file_location')}"]
+        return ["CHANGE THIS MESSAGE: Use the Nessus import thing"]
 
     def function(self, sessions: SessionManager, artefacts: ArtefactManager, pattern: Pattern):
         """Execute the action."""
@@ -32,24 +37,47 @@ class ImportNessusScanResultsFromCSV(Action):
         if not os.path.exists(file_location):
             raise FileNotFoundError(f"File {file_location} not found")
         
-        # Read the file and parse into pandas DataFrame
         try:
             df = pd.read_csv(file_location)
-            return ActionExecutionResult(
-                command=["pd.read_csv", file_location],
-                stdout=f"Successfully parsed CSV file with {len(df)} rows and {len(df.columns)} columns",
-                data={"dataframe": df}
-            )
         except Exception as e:
             return ActionExecutionResult(
-                command=["pd.read_csv", file_location],
+                command=[f"pd.read_csv('{file_location}')"],
                 exit_status=1,
                 stderr=f"Error parsing CSV file: {str(e)}"
             )
         
+        try:
+            uuid = artefacts.placeholder(file_location)
+            artefact_path = artefacts.get_path(uuid)
+            df.to_csv(artefact_path, index=False)
+            return ActionExecutionResult(
+                command=[f"pd.read_csv('{file_location}')"],
+                stdout=f"Successfully parsed CSV file with {len(df)} rows and {len(df.columns)} columns",
+                artefacts={"downloaded_file_id": uuid}
+            )
+        except Exception as e:
+            return ActionExecutionResult(
+                command=[f"pd.read_csv({file_location})"],
+                exit_status=1,
+                stderr=f"Error saving dataframe to artefact manager: {str(e)}"
+            )
+        
+        
     
-    def capture_state_change(self, artefacts: ArtefactManager, pattern: Pattern, output: ActionExecutionResult):
-        """Capture the state change."""
+    def capture_state_change(self, kg: GraphDB, artefacts: ArtefactManager, pattern: Pattern, output: ActionExecutionResult):
+        """
+        Captures the state change in the knowledge graph after the Nessus scan results are imported.
+
+        Args:
+            kg (GraphDB): The knowledge graph representing the current state of the system.
+            artefacts (ArtefactManager): Manages artefacts related to the Nessus scan results.
+            pattern (Pattern): The pattern describing the Nessus scan results file.
+            output (ActionExecutionResult): The result of the Nessus scan results import.
+
+        Returns:
+            StateChangeSequence: A sequence of changes made to the system state.
+        """        
+         
         changes: StateChangeSequence = []
         nessus_plugins = {
             "10287": {
@@ -60,11 +88,12 @@ class ImportNessusScanResultsFromCSV(Action):
                   }  
             }
         }
-        df = output.data.get('dataframe')
+        df_artefact_id = output.artefacts.get('downloaded_file_id')
+        df = pd.read_csv(artefacts.get_path(df_artefact_id))
+
         df['Plugin ID'] = df['Plugin ID'].astype('string')
         for plugin in nessus_plugins:
             if plugin in df['Plugin ID'].values:
-                print("Plugin found: ", plugin)
                 target_entity_type = nessus_plugins[plugin]["target_entity_type"]
                 property_type_to_col_names = nessus_plugins[plugin]["property_type_to_col_names"]
                 
@@ -75,17 +104,10 @@ class ImportNessusScanResultsFromCSV(Action):
                 for row in plugin_df.to_dict(orient='records'):
                     row_properties = {}
                     for property_type, col_name in property_type_to_col_names.items():
-                        print("row: ", row)
-                        print("col_name: ", col_name)
-                        print("property_type: ", property_type)
-                        print("property_type_to_col_names: ", property_type_to_col_names)
-                        print("row[col_name]: ", row[col_name])
                         row_properties[property_type] = row[col_name]
                     changes.append(
                         Entity(target_entity_type, alias=target_entity_type.lower(), **row_properties)
                     )
-                print("CHANGES")
-                print(changes)
 
         # asset = Entity('Asset', alias='asset', ip_address=ip)
         #     sub_asset_pattern = asset.with_edge(Relationship('belongs_to')).with_node(subnet)
