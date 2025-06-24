@@ -1,13 +1,17 @@
 import os
 import pathlib
 import pandas as pd
+from ipaddress import ip_address
 
 from action_state_interface.action import Action, StateChangeSequence
+from action_state_interface.action_utils import get_attack_ips, get_non_attack_ips
 from artefacts.ArtefactManager import ArtefactManager
 from Session import SessionManager
 from kg_api import Entity, Pattern, Relationship, GraphDB
 from action_state_interface.exec import ActionExecutionResult
 from kg_api.query import Query
+
+base_path = pathlib.Path(__file__).parent.parent.parent
 
 class ImportNessusScanResultsFromCSV(Action):
     """Import Nessus scan results from a CSV file."""
@@ -35,6 +39,7 @@ class ImportNessusScanResultsFromCSV(Action):
         # Read the location of the file from a property on the entity
         file_location = pattern.get('nessus_file_location').get('file_location')
         if not os.path.exists(file_location):
+            print(f"File {file_location} not found")
             raise FileNotFoundError(f"File {file_location} not found")
         
         try:
@@ -46,13 +51,36 @@ class ImportNessusScanResultsFromCSV(Action):
                 stderr=f"Error parsing CSV file: {str(e)}"
             )
         
+        # Filter IPs using the same pattern as FastNmapScan
+        NON_ATTACK_IPS = get_non_attack_ips(base_path / 'non_attack_ips.txt')
+        ATTACK_IPS = get_attack_ips(base_path / 'attack_ips.txt')
+        
+        # Convert to sets for efficient lookup
+        non_attack_ips_set = set(NON_ATTACK_IPS)
+        attack_ips_set = set(ATTACK_IPS)
+        
+        # Filter out non-targetable IPs efficiently
+        if 'Host' in df.columns:
+            # Convert to IPv4 addresses and filter
+            ip4_non_attack_ips = {ip for ip in NON_ATTACK_IPS if ip_address(ip).version == 4}
+            ip4_attack_ips = {ip for ip in ATTACK_IPS if ip_address(ip).version == 4}
+            
+            # Filter dataframe to only include targetable IPs
+            if ATTACK_IPS:
+                # If attack IPs are specified, only include those
+                df = df[df['Host'].isin(ip4_attack_ips)]
+            elif NON_ATTACK_IPS:
+                # Otherwise, exclude non-attack IPs
+                df = df[~df['Host'].isin(ip4_non_attack_ips)]# If no attack or non-attack IPs are specified, do nothing
+                
+        
         try:
             uuid = artefacts.placeholder(file_location)
             artefact_path = artefacts.get_path(uuid)
             df.to_csv(artefact_path, index=False)
             return ActionExecutionResult(
                 command=[f"pd.read_csv('{file_location}')"],
-                stdout=f"Successfully parsed CSV file with {len(df)} rows and {len(df.columns)} columns",
+                stdout=f"Successfully parsed CSV file with {len(df)} rows and {len(df.columns)} columns after IP filtering",
                 artefacts={"downloaded_file_id": uuid}
             )
         except Exception as e:
@@ -105,11 +133,12 @@ class ImportNessusScanResultsFromCSV(Action):
                     row_properties = {}
                     for property_type, col_name in property_type_to_col_names.items():
                         row_properties[property_type] = row[col_name]
-                    changes.append(
-                        Entity(target_entity_type, alias=target_entity_type.lower(), **row_properties)
-                    )
+                    
+                    # Create the new entity with the correct alias format
+                    new_entity = Entity(target_entity_type, alias=target_entity_type.lower(), **row_properties)
+                    
+                    # Use simple merge - the database should handle duplicates based on unique constraints
+                    # This is simpler and more reliable than merge_if_not_match for this use case
+                    changes.append((None, "merge", new_entity))
 
-        # asset = Entity('Asset', alias='asset', ip_address=ip)
-        #     sub_asset_pattern = asset.with_edge(Relationship('belongs_to')).with_node(subnet)
-        #     changes.append((subnet, "merge", sub_asset_pattern))
         return changes
