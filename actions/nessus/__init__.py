@@ -1,4 +1,4 @@
-from .ImportNessusScanResultsFromCSV import ImportNessusScanResultsFromCSV
+from .NessusCSVImportAllAssets import NessusCSVImportAllAssets
 
 def get_actions() -> list:
-    return [ImportNessusScanResultsFromCSV()]
+    return [NessusCSVImportAllAssets()]

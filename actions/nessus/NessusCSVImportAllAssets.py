@@ -13,11 +13,11 @@ from kg_api.query import Query
 
 base_path = pathlib.Path(__file__).parent.parent.parent
 
-class ImportNessusScanResultsFromCSV(Action):
+class NessusCSVImportAllAssets(Action):
     """Import Nessus scan results from a CSV file."""
 
     def __init__(self):
-        super().__init__("ImportNessusScanResultsFromCSV", "T1595 Active Scanning", "TA0043 Reconnaissance", [])
+        super().__init__("NessusCSVImportAllAssets", "T1595 Active Scanning", "TA0043 Reconnaissance", [])
         self.noise = 0.0
         self.impact = 0.0
 
@@ -31,8 +31,7 @@ class ImportNessusScanResultsFromCSV(Action):
         return query
 
     def expected_outcome(self, pattern: Pattern) -> list[str]:
-        #return [f"Extract knowledge of the network from {pattern.get('nessus_file_location').get('file_location')}"]
-        return ["CHANGE THIS MESSAGE: Use the Nessus import thing"]
+        return [f"Extract knowledge of the network from {pattern.get('nessus_file_location').get('file_location')}"]
 
     def function(self, sessions: SessionManager, artefacts: ArtefactManager, pattern: Pattern):
         """Execute the action."""
