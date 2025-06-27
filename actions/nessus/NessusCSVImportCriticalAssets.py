@@ -114,8 +114,7 @@ class NessusCSVImportCriticalAssets(Action):
                 "target_entity_type": "Asset",
                 "property_type_to_col_names": {
                     "ip_address": "Host",
-                    "Nessus_risk": "Risk",
-                    "Nessus_ports_and_vulnerabilities": None  # We'll compute this
+                    "Nessus_results": None  # We'll compute this
                 }
             }
         }
@@ -128,10 +127,13 @@ class NessusCSVImportCriticalAssets(Action):
             for _, row in df_group.iterrows():
                 port = str(row['Port'])
                 name = str(row['Name'])
-                if port not in vulnerabilities:
-                    vulnerabilities[port] = []
-                if name not in vulnerabilities[port]:
-                    vulnerabilities[port].append(name)
+                risk = str(row['Risk'])
+                if risk not in vulnerabilities:
+                    vulnerabilities[risk] = {}
+                if port not in vulnerabilities[risk]:
+                    vulnerabilities[risk][port] = []
+                if name not in vulnerabilities[risk][port]:
+                    vulnerabilities[risk][port].append(name)
             return json.dumps(vulnerabilities)
 
         # Group by Host and process each group
@@ -141,8 +143,7 @@ class NessusCSVImportCriticalAssets(Action):
             # Create properties dictionary for the entity
             properties = {
                 "ip_address": host,
-                "Nessus_risk": group['Risk'].iloc[0],
-                "Nessus_ports_and_vulnerabilities": create_vulnerabilities_dict(group)
+                "Nessus_results": create_vulnerabilities_dict(group)
             }
             
             # Create the new entity with the correct alias format
