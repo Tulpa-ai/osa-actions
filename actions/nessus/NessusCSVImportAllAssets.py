@@ -18,8 +18,8 @@ class NessusCSVImportAllAssets(Action):
 
     def __init__(self):
         super().__init__("NessusCSVImportAllAssets", "T1595 Active Scanning", "TA0043 Reconnaissance", [])
-        self.noise = 0.0
-        self.impact = 0.0
+        self.noise = 0.1
+        self.impact = 0
 
     def get_target_query(self):
         """Get the target query for the action."""
