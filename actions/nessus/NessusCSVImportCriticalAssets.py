@@ -2,6 +2,7 @@ import os
 import pathlib
 import pandas as pd
 from ipaddress import ip_address
+import json
 
 from action_state_interface.action import Action, StateChangeSequence
 from action_state_interface.action_utils import get_attack_ips, get_non_attack_ips
@@ -114,7 +115,7 @@ class NessusCSVImportCriticalAssets(Action):
                 "property_type_to_col_names": {
                     "ip_address": "Host",
                     "Nessus_risk": "Risk",
-                    "Nessus_port_and_vulnerability": None  # We'll compute this
+                    "Nessus_ports_and_vulnerabilities": None  # We'll compute this
                 }
             }
         }
@@ -131,7 +132,7 @@ class NessusCSVImportCriticalAssets(Action):
                     vulnerabilities[port] = []
                 if name not in vulnerabilities[port]:
                     vulnerabilities[port].append(name)
-            return vulnerabilities
+            return json.dumps(vulnerabilities)
 
         # Group by Host and process each group
         grouped = df.groupby('Host')
@@ -141,7 +142,7 @@ class NessusCSVImportCriticalAssets(Action):
             properties = {
                 "ip_address": host,
                 "Nessus_risk": group['Risk'].iloc[0],
-                "Nessus_port_and_vulnerability": create_vulnerabilities_dict(group)
+                "Nessus_ports_and_vulnerabilities": create_vulnerabilities_dict(group)
             }
             
             # Create the new entity with the correct alias format
