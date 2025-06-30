@@ -96,8 +96,17 @@ class FastNmapScan(Action):
         changes: StateChangeSequence = []
         for ip, ports in results.items():
             asset = Entity('Asset', alias='asset', ip_address=ip)
+            asset_pattern = gdb.get_matching(asset)
+            
+            if asset_pattern:
+                asset = asset_pattern[0].get("asset")
+                sub_match_pattern = subnet.combine(asset)
+            else:
+                sub_match_pattern = subnet
+                
             sub_asset_pattern = asset.with_edge(Relationship('belongs_to')).with_node(subnet)
-            changes.append((subnet, "merge", sub_asset_pattern))
+            
+            changes.append((sub_match_pattern, "merge", sub_asset_pattern))
             for port in ports:
                 num, protocol = port.split('/')
                 port_pattern = asset.with_edge(Relationship('has')).with_node(
