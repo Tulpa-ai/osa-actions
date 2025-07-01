@@ -109,47 +109,39 @@ class NessusCSVImportCriticalAssets(Action):
         """        
          
         changes: StateChangeSequence = []
-        nessus_plugins = {
-            "all": {  # We'll process all plugins now, not just specific ones
-                "target_entity_type": "Asset",
-                "property_type_to_col_names": {
-                    "ip_address": "Host",
-                    "Nessus_results": None  # We'll compute this
-                }
-            }
-        }
         df_artefact_id = output.artefacts.get('downloaded_file_id')
         df = pd.read_csv(artefacts.get_path(df_artefact_id))
 
-        # Group by Host and create vulnerabilities dictionary
-        def create_vulnerabilities_dict(df_group):
-            vulnerabilities = {}
-            for _, row in df_group.iterrows():
-                port = str(row['Port'])
-                name = str(row['Name'])
-                risk = str(row['Risk'])
-                if risk not in vulnerabilities:
-                    vulnerabilities[risk] = {}
-                if port not in vulnerabilities[risk]:
-                    vulnerabilities[risk][port] = []
-                if name not in vulnerabilities[risk][port]:
-                    vulnerabilities[risk][port].append(name)
-            return json.dumps(vulnerabilities)
+        # First get the distinct hosts
+        hosts = [x for x in df['Host'].unique()]
+        for host in hosts:
+            new_asset = Entity('Asset', alias='asset', ip_address=host)
+            changes.append((None, 'merge', new_asset))
 
-        # Group by Host and process each group
-        grouped = df.groupby('Host')
-        
-        for host, group in grouped:
-            # Create properties dictionary for the entity
-            properties = {
-                "ip_address": host,
-                "Nessus_results": create_vulnerabilities_dict(group)
+        # Then get the vulnerability info for each port
+        grouped = df.groupby(['Host', 'Port', 'Protocol'])
+
+        def create_vulnerabilities_list(df_group):
+            vulns = []
+            for _, row in df_group.iterrows():
+                provenance = 'Nessus'
+                risk_level = str(row['Risk'])
+                vuln_detail = str(row['Name'])
+                vulns.append((provenance, risk_level, vuln_detail))
+            return str(vulns)
+
+        for (host, port, protocol), group in grouped:
+            current_asset = Entity('Asset', alias='asset', ip_address=host)
+
+            port_properties = {
+                "number": int(port),
+                "protocol": protocol,
+                "vulnerabilities": create_vulnerabilities_list(group)
             }
             
-            # Create the new entity with the correct alias format
-            new_entity = Entity("Asset", alias="asset", **properties)
-            
-            # Add to changes sequence
-            changes.append((None, "merge", new_entity))
+            port_pattern = current_asset.with_edge(Relationship('has')).with_node(
+                Entity('OpenPort', alias='port',  **port_properties)
+            )
+            changes.append((current_asset, "merge", port_pattern))
 
         return changes 
