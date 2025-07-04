@@ -113,10 +113,10 @@ class NessusCSVImportCriticalAssets(Action):
         df = pd.read_csv(artefacts.get_path(df_artefact_id))
 
         # First get the distinct hosts
-        hosts = [x for x in df['Host'].unique()]
-        for host in hosts:
-            new_asset = Entity('Asset', alias='asset', ip_address=host)
-            changes.append((None, 'merge', new_asset))
+        # hosts = [x for x in df['Host'].unique()]
+        # for host in hosts:
+        #     new_asset = Entity('Asset', alias='asset', ip_address=host)
+        #     changes.append((None, 'merge', new_asset))
 
         # Then get the vulnerability info for each port
         grouped = df.groupby(['Host', 'Port', 'Protocol'])
@@ -136,25 +136,37 @@ class NessusCSVImportCriticalAssets(Action):
             
             current_asset = Entity('Asset', alias='asset', ip_address=host)
 
-            existing_asset_and_port_pattern = gdb.get_matching(current_asset).with_edge(Relationship('has')).with_node(
+            #TODO: move this out one level in the loop so that we're not doing so many lookups
+            existing_asset_match = gdb.get_matching(current_asset)
+
+            if existing_asset_match:
+                print(f"ASSET MATCH {existing_asset_match}")
+                current_asset = existing_asset_match[0].get('asset')
+            else:
+                print(f"NO ASSET MATCH {existing_asset_match}")
+                current_asset = Entity('Asset', alias='asset', ip_address=host)
+                changes.append((None, 'merge', current_asset))
+    
+            existing_asset_and_port_pattern = current_asset.with_edge(Relationship('has')).with_node(
                 Entity('OpenPort', alias='port', number=int(port), protocol=protocol)
             )
 
-            if existing_asset_and_port_pattern:
-                existing_port = existing_asset_and_port_pattern[0].get("port")
-                existing_port.set('vulnerabilities', vulns_detail)
-                changes.append(existing_asset_and_port_pattern, 'update', existing_port)
-            else:
-                port_properties = {
-                    "number": int(port),
-                    "protocol": protocol,
-                    "vulnerabilities": create_vulnerabilities_list(group)
-                }
-                
-                port_pattern = current_asset.with_edge(Relationship('has')).with_node(
-                    Entity('OpenPort', alias='port',  **port_properties)
-                )
+            existing_port_match = gdb.get_matching(existing_asset_and_port_pattern)
 
-                changes.append((current_asset, "merge", port_pattern))
+            if existing_port_match:
+                print(f"PORT MATCH {existing_port_match}")
+                current_port = existing_port_match[0].get('port')
+            else:                
+                print(f"NO PORT MATCH {existing_port_match}")                    
+                changes.append((current_asset, 'merge', existing_asset_and_port_pattern))
+                current_port = existing_asset_and_port_pattern.get('port')
+            
+            #TODO: check for existing vulnerabilities and merge if necessary
+            current_port.set('vulnerabilities', vulns_detail)
 
-        return changes 
+            change = (existing_asset_and_port_pattern, 'update', current_port)
+            print(f"change = {change}")
+
+            changes.append(change)
+
+        return changes
