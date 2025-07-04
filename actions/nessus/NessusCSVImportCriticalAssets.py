@@ -94,7 +94,7 @@ class NessusCSVImportCriticalAssets(Action):
         
         
     
-    def capture_state_change(self, kg: GraphDB, artefacts: ArtefactManager, pattern: Pattern, output: ActionExecutionResult):
+    def capture_state_change(self, gdb: GraphDB, artefacts: ArtefactManager, pattern: Pattern, output: ActionExecutionResult):
         """
         Captures the state change in the knowledge graph after the Nessus scan results are imported.
 
@@ -131,17 +131,30 @@ class NessusCSVImportCriticalAssets(Action):
             return str(vulns)
 
         for (host, port, protocol), group in grouped:
+            
+            vulns_detail = create_vulnerabilities_list(group)            
+            
             current_asset = Entity('Asset', alias='asset', ip_address=host)
 
-            port_properties = {
-                "number": int(port),
-                "protocol": protocol,
-                "vulnerabilities": create_vulnerabilities_list(group)
-            }
-            
-            port_pattern = current_asset.with_edge(Relationship('has')).with_node(
-                Entity('OpenPort', alias='port',  **port_properties)
+            existing_asset_and_port_pattern = gdb.get_matching(current_asset).with_edge(Relationship('has')).with_node(
+                Entity('OpenPort', alias='port', number=int(port), protocol=protocol)
             )
-            changes.append((current_asset, "merge", port_pattern))
+
+            if existing_asset_and_port_pattern:
+                existing_port = existing_asset_and_port_pattern[0].get("port")
+                existing_port.set('vulnerabilities', vulns_detail)
+                changes.append(existing_asset_and_port_pattern, 'update', existing_port)
+            else:
+                port_properties = {
+                    "number": int(port),
+                    "protocol": protocol,
+                    "vulnerabilities": create_vulnerabilities_list(group)
+                }
+                
+                port_pattern = current_asset.with_edge(Relationship('has')).with_node(
+                    Entity('OpenPort', alias='port',  **port_properties)
+                )
+
+                changes.append((current_asset, "merge", port_pattern))
 
         return changes 
