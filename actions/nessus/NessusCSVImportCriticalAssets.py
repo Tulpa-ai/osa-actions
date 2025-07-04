@@ -133,10 +133,8 @@ class NessusCSVImportCriticalAssets(Action):
             existing_asset_match = gdb.get_matching(current_asset)
 
             if existing_asset_match:
-                print(f"ASSET MATCH {existing_asset_match}")
                 current_asset = existing_asset_match[0].get('asset')
             else:
-                print(f"NO ASSET MATCH {existing_asset_match}")
                 current_asset = Entity('Asset', alias='asset', ip_address=host)
                 changes.append((None, 'merge', current_asset))
     
@@ -147,36 +145,24 @@ class NessusCSVImportCriticalAssets(Action):
             existing_port_match = gdb.get_matching(existing_asset_and_port_pattern)
 
             if existing_port_match:
-                print(f"PORT MATCH {existing_port_match}")
                 current_port = existing_port_match[0].get('port')
             else:                
-                print(f"NO PORT MATCH {existing_port_match}")                    
                 changes.append((current_asset, 'merge', existing_asset_and_port_pattern))
                 current_port = existing_asset_and_port_pattern.get('port')
             
             #TODO: Remove this janky string manipulation
             existing_vuln_list = current_port.get('vulnerabilities')
             if existing_vuln_list:
-                print(f"EXISTING VULN LIST, current_port = {current_port}")
                 parsed_existing_vulns_list = literal_eval(existing_vuln_list)
                 for new_vuln in vulns_detail:
                     if new_vuln not in parsed_existing_vulns_list:
                         parsed_existing_vulns_list.append(new_vuln)
                 current_port.set('vulnerabilities', str(parsed_existing_vulns_list))
             else:
-                print(f"NO EXISTING VULN LIST, current_port = {current_port}")
                 current_port.set('vulnerabilities', str(vulns_detail))
 
             change = (existing_asset_and_port_pattern, 'update', current_port)
-            print(f"change = {change}")
 
             changes.append(change)
-        print("\nCHANGES\n")
-        print("\nCHANGES\n")
-        print("\nCHANGES\n")
-        for change in changes:
-            print(change)
-        print("\nCHANGES\n")
-        print("\nCHANGES\n")
-        print("\nCHANGES\n")
+
         return changes
