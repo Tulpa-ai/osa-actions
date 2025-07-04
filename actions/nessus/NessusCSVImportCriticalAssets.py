@@ -1,3 +1,4 @@
+from ast import literal_eval
 import os
 import pathlib
 import pandas as pd
@@ -111,14 +112,6 @@ class NessusCSVImportCriticalAssets(Action):
         changes: StateChangeSequence = []
         df_artefact_id = output.artefacts.get('downloaded_file_id')
         df = pd.read_csv(artefacts.get_path(df_artefact_id))
-
-        # First get the distinct hosts
-        # hosts = [x for x in df['Host'].unique()]
-        # for host in hosts:
-        #     new_asset = Entity('Asset', alias='asset', ip_address=host)
-        #     changes.append((None, 'merge', new_asset))
-
-        # Then get the vulnerability info for each port
         grouped = df.groupby(['Host', 'Port', 'Protocol'])
 
         def create_vulnerabilities_list(df_group):
@@ -128,7 +121,7 @@ class NessusCSVImportCriticalAssets(Action):
                 risk_level = str(row['Risk'])
                 vuln_detail = str(row['Name'])
                 vulns.append((provenance, risk_level, vuln_detail))
-            return str(vulns)
+            return vulns
 
         for (host, port, protocol), group in grouped:
             
@@ -161,8 +154,18 @@ class NessusCSVImportCriticalAssets(Action):
                 changes.append((current_asset, 'merge', existing_asset_and_port_pattern))
                 current_port = existing_asset_and_port_pattern.get('port')
             
-            #TODO: check for existing vulnerabilities and merge if necessary
-            current_port.set('vulnerabilities', vulns_detail)
+            #TODO: Remove this janky string manipulation
+            existing_vuln_list = current_port.get('vulnerabilities')
+            if existing_vuln_list:
+                print(f"EXISTING VULN LIST, current_port = {current_port}")
+                parsed_existing_vulns_list = literal_eval(existing_vuln_list)
+                for new_vuln in vulns_detail:
+                    if new_vuln not in parsed_existing_vulns_list:
+                        parsed_existing_vulns_list.append(new_vuln)
+                current_port.set('vulnerabilities', str(parsed_existing_vulns_list))
+            else:
+                print(f"NO EXISTING VULN LIST, current_port = {current_port}")
+                current_port.set('vulnerabilities', str(vulns_detail))
 
             change = (existing_asset_and_port_pattern, 'update', current_port)
             print(f"change = {change}")
