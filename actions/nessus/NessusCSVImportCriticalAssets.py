@@ -171,5 +171,12 @@ class NessusCSVImportCriticalAssets(Action):
             print(f"change = {change}")
 
             changes.append(change)
-
+        print("\nCHANGES\n")
+        print("\nCHANGES\n")
+        print("\nCHANGES\n")
+        for change in changes:
+            print(change)
+        print("\nCHANGES\n")
+        print("\nCHANGES\n")
+        print("\nCHANGES\n")
         return changes
