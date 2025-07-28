@@ -33,9 +33,8 @@ class PasswordlessSudoCheck(Action):
         get_target_patterns check to find a session.
         """
         session = Entity(type='Session', alias='session')
-        pattern = session.combine(Entity(type='Service', alias='service'))
         query = Query()
-        query.match(pattern)
+        query.match(session)
         query.where(session.listed_sudo_permissions.is_null())
         query.where(session.protocol.is_in(['ssh', 'busybox', 'shell']))
         query.ret_all()
@@ -58,7 +57,6 @@ class PasswordlessSudoCheck(Action):
         Update knowledge graph with the discovered command permissions.
         """
         session = pattern.get('session')
-        service = pattern.get('service')
         user = session.get('username')
         lines = output.stdout.strip().split("\n")
 
@@ -73,21 +71,6 @@ class PasswordlessSudoCheck(Action):
                         Entity(type='Permission', name=command, command=command, as_user=sudo_usr)
                     )
                     changes.append((link_node, "merge", merge_pattern))
-                elif service:
-                    link_node = Entity(type='User', alias='user', username=sudo_usr)
-                    merge_pattern = link_node.with_edge(Relationship(type='is_client', direction='r')).with_node(
-                        service
-                    )
-                    changes.append((service, "merge", merge_pattern))
-
-                    merge_pattern = link_node.with_edge(Relationship(type='has', direction='r')).with_node(
-                        Entity(type='Permission', name=command, command=command, as_user=sudo_usr)
-                    )
-                    changes.append((link_node, "merge", merge_pattern))
-
-                    update_session = session.copy()
-                    update_session.set('username', sudo_usr)
-                    changes.append((session, "update", update_session))
 
         new_session = session.copy()
         new_session.set('listed_sudo_permissions', True)
