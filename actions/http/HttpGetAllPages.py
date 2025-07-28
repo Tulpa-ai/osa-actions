@@ -11,7 +11,7 @@ from Session import SessionManager
 
 class HttpGetAllPages(Action):
     """
-    Use GoSpider to crawl a web app and identify any pages it finds.
+    Use Feroxbuster to crawl a web app and identify any pages it finds.
     """
 
     def __init__(self):
@@ -41,27 +41,41 @@ class HttpGetAllPages(Action):
 
     def function(self, sessions: SessionManager, artefacts: ArtefactManager, pattern: Pattern) -> ActionExecutionResult:
         """
-        Use GoSpider to crawl the web app
+        Use Feroxbuster to crawl the web app with a hardcoded recursion depth of 2 
+        (we'll make it possible to configure actions in future, in the meantime if you want to change this you'll need to create a clone of this action)
+        Crawls twice: once with slashes appended (-f) and once without, so that we don't miss things on weirdly configured web services
         """
         ip = pattern.get('asset').get('ip_address')
-        result = shell(
+        
+        res1 = shell(
             "feroxbuster",
             [
-                "-u",
-                f"http://{ip}",
-                "-w",
-                "/usr/share/wordlists/seclists/Discovery/Web-Content/directory-list-2.3-small.txt",
-                "-f",
-                "--threads",
-                100,
-                "-C",
-                404,
-                "-d",
-                2,
+                "-u", f"http://{ip}",
+                "-w", "/usr/share/wordlists/seclists/Discovery/Web-Content/directory-list-2.3-small.txt",
+                "--threads", 100,
+                "-C", 404,
+                "-d", 2,
                 "--silent",
             ],
         )
-        return result
+        res1_urls = set(res1.stdout.split("\n"))
+        
+        res2 = shell(
+            "feroxbuster",
+            [
+                "-u", f"http://{ip}",
+                "-w", "/usr/share/wordlists/seclists/Discovery/Web-Content/directory-list-2.3-small.txt",
+                "--threads", 100,
+                "-C", 404,
+                "-d", 2,
+                "--silent",
+                "-f",
+            ],
+        )
+        
+        res2_urls = set(res2.stdout.split("\n"))
+        res1.stdout = "\n".join(res1_urls.union(res2_urls))
+        return res1
 
     def capture_state_change(
         self, kg: GraphDB, artefacts: ArtefactManager, pattern: Pattern, output: ActionExecutionResult
