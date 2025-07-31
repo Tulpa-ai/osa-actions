@@ -49,8 +49,8 @@ class FastNmapScan(Action):
         """
         Use execute function from action_utils to perform NMAP scan.
         """
-        NON_ATTACK_IPS = get_non_attack_ips(base_path / 'non_attack_ips.txt')
-        ATTACK_IPS = get_attack_ips(base_path / 'attack_ips.txt')
+        NON_ATTACK_IPS = get_non_attack_ips(base_path / 'agent' / 'hard_bounds' / 'non_attack_ips.txt')
+        ATTACK_IPS = get_attack_ips(base_path / 'agent' / 'hard_bounds' / 'attack_ips.txt')
 
         subnet = pattern.get('subnet')
         ip4_attack_ips = [ip for ip in ATTACK_IPS if ip_address(ip).version == 4]
