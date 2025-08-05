@@ -112,6 +112,6 @@ class FastNmapScan(Action):
                 port_pattern = asset.with_edge(Relationship('has')).with_node(
                     Entity('OpenPort', alias='port', number=int(num), protocol=protocol)
                 )
-                changes.append((sub_asset_pattern, "merge", port_pattern))
+                changes.append((sub_asset_pattern, "merge_if_not_match", port_pattern))
 
         return changes
