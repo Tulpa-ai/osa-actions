@@ -14,15 +14,15 @@ from Session import SessionManager
 
 base_path = pathlib.Path(__file__).parent.parent.parent
 
-class FastNmapScan(Action):
+class SlowNmapScan(Action):
     """
-    Implementation of shallow NMAP scan.
+    Implementation of slow shallow NMAP scan.
     This NMAP scan is performed against subnets.
     """
 
     def __init__(self):
-        super().__init__("FastNmapScan", "T1046 Network Service Discovery", "TA0007 Discovery", ["loud", "fast"])
-        self.noise = 0.8
+        super().__init__("SlowNmapScan", "T1046 Network Service Discovery", "TA0007 Discovery", ["quiet", "slow"])
+        self.noise = 0.2
         self.impact = 0
 
     def expected_outcome(self, pattern: Pattern) -> list[str]:
@@ -36,7 +36,7 @@ class FastNmapScan(Action):
 
     def get_target_query(self) -> Query:
         """
-        get_target_patterns check for fast NMAP. This NMAP finds other assets on the
+        get_target_patterns check for slow NMAP. This NMAP finds other assets on the
         network but does not identify open ports or services.
         """
         sub = Entity('Subnet', alias='subnet')
@@ -59,13 +59,13 @@ class FastNmapScan(Action):
         if ATTACK_IPS:
             res = shell(
                 "nmap",
-                ["-T4", "-F", "-sS", "-n", " ".join(ip4_attack_ips)],
+                ["-T2", "-F", "-sS", "-n", " ".join(ip4_attack_ips)],
             )
             return res
 
         res = shell(
             "nmap",
-            ["-T4", "-F", "-sS", "-n", subnet.get('network_address'), "--exclude", ",".join(ip4_non_attack_ips)],
+            ["-T2", "-F", "-sS", "-n", subnet.get('network_address'), "--exclude", ",".join(ip4_non_attack_ips)],
         )
         return res
 
