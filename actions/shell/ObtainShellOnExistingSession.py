@@ -16,8 +16,8 @@ class ObtainShellOnExistingSession(Action):
     def __init__(self):
         super().__init__(
             "ObtainShellOnExistingSession",
-            "T1548 Abuse Elevation Control Mechanism",
-            "TA0004 Privilege Escalation",
+            "T1548",
+            "TA0004",
             ["quiet", "fast"],
         )
         self.noise = 0.5

@@ -17,7 +17,7 @@ class IpRoute(Action):
 
     def __init__(self):
         super().__init__(
-            "IpRoute", "T1016 System Network Configuration Discovery", "TA0007 Discovery", ["quiet", "fast"]
+            "IpRoute", "T1016", "TA0007", ["quiet", "fast"]
         )
         self.noise = 0.8
         self.impact = 0

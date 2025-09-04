@@ -21,7 +21,7 @@ def extract_banner_from_nmap_report_xml(xml_str) -> Optional[str]:
 
 class NmapBannerScan(Action):
     def __init__(self):
-        super().__init__("NmapBannerScan", "T1046 Network Service Discovery", "TA0007 Discovery", ["loud", "fast"])
+        super().__init__("NmapBannerScan", "T1046", "TA0007", ["loud", "fast"])
         self.noise = 0.2
         self.impact = 0
 

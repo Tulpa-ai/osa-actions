@@ -21,7 +21,7 @@ class SlowNmapScan(Action):
     """
 
     def __init__(self):
-        super().__init__("SlowNmapScan", "T1046 Network Service Discovery", "TA0007 Discovery", ["quiet", "slow"])
+        super().__init__("SlowNmapScan", "T1046", "TA0007", ["quiet", "slow"])
         self.noise = 0.2
         self.impact = 0
 

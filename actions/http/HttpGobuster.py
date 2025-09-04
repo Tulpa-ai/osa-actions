@@ -31,7 +31,7 @@ class HttpGobuster(Action):
     """
 
     def __init__(self):
-        super().__init__("HttpGobuster", "T1083 File and Directory Discovery", "TA0007 Discovery", ["quiet", "fast"])
+        super().__init__("HttpGobuster", "T1083", "TA0007", ["quiet", "fast"])
         self.noise = 0.8
         self.impact = 0.4
 

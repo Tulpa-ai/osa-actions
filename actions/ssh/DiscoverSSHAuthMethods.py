@@ -35,7 +35,7 @@ class DiscoverSSHAuthMethods(Action):
     """
 
     def __init__(self):
-        super().__init__("DiscoverSSHAuthMethods", "T1078 Valid Accounts", "TA0001 Initial Access", ["quiet", "fast"])
+        super().__init__("DiscoverSSHAuthMethods", "T1078", "TA0001", ["quiet", "fast"])
         self.noise = 0.2
         self.impact = 0.1
 

@@ -36,7 +36,7 @@ class SshLoginPubkey(Action):
     """
 
     def __init__(self):
-        super().__init__("SshLoginPubkey", "T1078 Valid Accounts", "TA0001 Initial Access", ["quiet", "fast"])
+        super().__init__("SshLoginPubkey", "T1078", "TA0001", ["quiet", "fast"])
         self.noise = 0.1
         self.impact = 0.5
 

@@ -22,7 +22,7 @@ def download_file(ftp, remote_file_path, local_file_path):
 
 class FtpDownloadFile(Action):
     def __init__(self):
-        super().__init__("FtpDownloadFile", "T1083 File and Directory Discovery", "TA0007 Discovery", ["quiet", "fast"])
+        super().__init__("FtpDownloadFile", "T1083", "TA0007", ["quiet", "fast"])
         self.noise = 0.2
         self.impact = 0.8
 

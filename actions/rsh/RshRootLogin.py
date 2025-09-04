@@ -15,7 +15,7 @@ class RshRootLogin(Action):
     """
 
     def __init__(self):
-        super().__init__("RshRootLogin", "TA0004", "T1068 Exploitation for Privilege Escalation", ["loud", "fast"])
+        super().__init__("RshRootLogin", "T1068", "TA0004", ["loud", "fast"])
         self.noise = 0.8
         self.impact = 0.8
 

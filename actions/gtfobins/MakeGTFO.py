@@ -16,7 +16,7 @@ class MakeGTFO(Action):
 
     def __init__(self):
         super().__init__(
-            "MakeGTFO", "T1548 Abuse Elevation Control Mechanism", "TA0004 Privilege Escalation", ["quiet", "fast"]
+            "MakeGTFO", "T1548", "TA0004", ["quiet", "fast"]
         )
         self.noise = 0.5
         self.impact = 0.8

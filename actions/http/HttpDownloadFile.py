@@ -27,7 +27,7 @@ def cmd_get_file_info(filepath) -> tuple[str, str]:
 
 class HttpDownloadFile(Action):
     def __init__(self):
-        super().__init__("HttpDownloadFile", "T1567 Exfiltration Over Web Service", "TA0010 Exfiltration", ["quiet", "fast"])
+        super().__init__("HttpDownloadFile", "T1567", "TA0010", ["quiet", "fast"])
         self.noise = 0
         self.impact = 0.02
 

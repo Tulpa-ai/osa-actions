@@ -22,7 +22,7 @@ def nmap_parse_os_version_and_family(xml_str):
 
 class AssetOSScan(Action):
     def __init__(self):
-        super().__init__("AssetOSScan", "T1046 Network Service Discovery", "TA0007 Discovery", ["loud", "fast"])
+        super().__init__("AssetOSScan", "T1046", "TA0007", ["loud", "fast"])
         self.noise = 0.2
         self.impact = 0
 
