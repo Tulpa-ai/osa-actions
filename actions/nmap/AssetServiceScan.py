@@ -28,7 +28,7 @@ def generic_service_parser(gdb: GraphDB, ap_pattern: Pattern, nmap_output: list,
 
 class AssetServiceScan(Action):
     def __init__(self):
-        super().__init__("AssetServiceScan", "T1046 Network Service Discovery", "TA0007 Discovery", ["loud", "fast"])
+        super().__init__("AssetServiceScan", "T1046", "TA0007", ["loud", "fast"])
         self.noise = 0.9
         self.impact = 0
         self._parsers = {'ssh': generic_service_parser, 'ftp': ftp_nmap_parser, 'http': generic_service_parser}

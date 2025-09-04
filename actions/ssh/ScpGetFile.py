@@ -23,7 +23,7 @@ class ScpGetFile(Action):
         Initializes the ScpGetFile action with a specific attack identifier,
         tactic, and technique information.
         """
-        super().__init__("ScpGetFile", "T1083 File and Directory Discovery", "TA0007 Discovery", ["loud", "fast"])
+        super().__init__("ScpGetFile", "T1083", "TA0007", ["loud", "fast"])
         self.noise = 0.3
         self.impact = 1
 

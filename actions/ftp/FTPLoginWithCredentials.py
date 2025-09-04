@@ -8,7 +8,7 @@ from Session import SessionManager
 
 class FTPLoginWithCredentials(Action):
     def __init__(self):
-        super().__init__("FTPLoginWithCredentials", "T1078 Valid Accounts", "TA0001 Initial Access", ["quiet", "fast"])
+        super().__init__("FTPLoginWithCredentials", "T1078", "TA0001", ["quiet", "fast"])
         self.noise = 0.0
         self.impact = 0.5
 

@@ -43,7 +43,7 @@ class LocalRecursiveFileSearch(Action):
         - Supports optional parameters: "quiet" and "fast".
         """
         super().__init__(
-            "LocalRecursiveFileSearch", "T1083 File and Directory Discovery", "TA0007 Discovery", ["loud", "slow"]
+            "LocalRecursiveFileSearch", "T1083", "TA0007", ["loud", "slow"]
         )
         self.noise = 1
         self.impact = 0.3

@@ -55,7 +55,7 @@ def filter_files_by_wordlist(file_list: list[str], wordlist: list[str], similari
 class FtpRecursiveFileSearch(Action):
     def __init__(self):
         super().__init__(
-            "FtpRecursiveFileSearch", "T1083 File and Directory Discovery", "TA0007 Discovery", ["quiet", "fast"]
+            "FtpRecursiveFileSearch", "T1083", "TA0007", ["quiet", "fast"]
         )
         self.noise = 0.2
         self.impact = 0.8

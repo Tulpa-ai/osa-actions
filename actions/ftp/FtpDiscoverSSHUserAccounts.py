@@ -19,7 +19,7 @@ def get_ssh_user_accounts(path_list) -> list[str]:
 class FtpDiscoverSSHUserAccounts(Action):
     def __init__(self):
         super().__init__(
-            "FtpDiscoverSSHUserAccounts", "T1083 File and Directory Discovery", "TA0007 Discovery", ["quiet", "fast"]
+            "FtpDiscoverSSHUserAccounts", "T1083", "TA0007", ["quiet", "fast"]
         )
         self.noise = 0.2
         self.impact = 0.2

@@ -19,7 +19,7 @@ class HydraBruteForceAction(Action):
     """
 
     def __init__(self):
-        super().__init__("HydraBruteForce", "T1110 Brute Force", "TA0006 Credential Access", ["quiet", "fast"])
+        super().__init__("HydraBruteForce", "T1110", "TA0006", ["quiet", "fast"])
         self.noise = 1
         self.impact = 0.8
 

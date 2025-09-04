@@ -16,7 +16,7 @@ class PasswordlessSudoCheck(Action):
 
     def __init__(self):
         super().__init__(
-            "PasswordlessSudoCheck", "T1069 Permission Groups Discovery", "TA0007 Discovery", ["quiet", "fast"]
+            "PasswordlessSudoCheck", "T1069", "TA0007", ["quiet", "fast"]
         )
         self.noise = 0.5
         self.impact = 0.0
