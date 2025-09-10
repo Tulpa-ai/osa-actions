@@ -57,10 +57,9 @@ class FastNmapScan(Action):
         ip4_non_attack_ips = [ip for ip in NON_ATTACK_IPS if ip_address(ip).version == 4]
 
         if ATTACK_IPS:
-            res = shell(
-                "nmap",
-                ["-T4", "-F", "-sS", "-n", " ".join(ip4_attack_ips)],
-            )
+            args = ["-T4", "-F", "-sS", "-n"]
+            args.extend(ip4_attack_ips)
+            res = shell("nmap", args)
             return res
 
         res = shell(
