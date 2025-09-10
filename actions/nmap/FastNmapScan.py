@@ -6,6 +6,7 @@ from ipaddress import ip_address
 
 from action_state_interface.action import Action, StateChangeSequence
 from action_state_interface.action_utils import get_attack_ips, get_non_attack_ips, shell
+from networking import is_ipv4_or_cidr
 from action_state_interface.exec import ActionExecutionResult
 from artefacts.ArtefactManager import ArtefactManager
 from kg_api import Entity, GraphDB, Pattern, Relationship, MultiPattern
@@ -53,8 +54,9 @@ class FastNmapScan(Action):
         ATTACK_IPS = get_attack_ips(base_path / 'agent' / 'hard_bounds' / 'attack_ips.txt')
 
         subnet = pattern.get('subnet')
-        ip4_attack_ips = [ip for ip in ATTACK_IPS if ip_address(ip).version == 4]
-        ip4_non_attack_ips = [ip for ip in NON_ATTACK_IPS if ip_address(ip).version == 4]
+        # Filter to only IPv4 addresses and CIDR ranges (Nmap can handle both)
+        ip4_attack_ips = [ip for ip in ATTACK_IPS if is_ipv4_or_cidr(ip)]
+        ip4_non_attack_ips = [ip for ip in NON_ATTACK_IPS if is_ipv4_or_cidr(ip)]
 
         if ATTACK_IPS:
             args = ["-T4", "-F", "-sS", "-n"]
