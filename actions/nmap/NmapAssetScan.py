@@ -21,22 +21,6 @@ def nmap_parse_os_version_and_family(xml_str):
             os_family = osclass.get("osfamily", "unknown")
     return os_version, os_family
 
-def add_vulnerability_entities(port, merge_pattern):
-    changes = []
-    if port["service"].get("vulnerabilities"):
-        for vuln in port["service"]["vulnerabilities"]:
-            vulnerability = Entity(
-                'Vulnerability', 
-                alias='vulnerability', 
-                id=vuln["id"],
-                cvss=vuln["cvss"],
-                is_exploit=vuln["is_exploit"],
-                vuln_type=vuln["type"]
-            )
-            vuln_merge_pattern = merge_pattern.with_edge(Relationship('exposes')).with_node(vulnerability)
-            changes.append((merge_pattern, 'merge', vuln_merge_pattern))
-    return changes
-
 # Supporting parser functions
 def ftp_nmap_parser(gdb: GraphDB, ap_pattern: Pattern, port_info: dict, parsed_info: dict, svc_kwargs: dict) -> StateChangeSequence:
     anon_login = parsed_info["ftp_anon_login"]
@@ -48,7 +32,6 @@ def ftp_nmap_parser(gdb: GraphDB, ap_pattern: Pattern, port_info: dict, parsed_i
     for username in users:
         usr_pattern = Entity('User', username=username).with_edge(Relationship('is_client')).with_node(service)
         changes.append((merge_pattern, "merge", usr_pattern))
-    changes.extend(add_vulnerability_entities(port_info, merge_pattern))
     return changes
 
 def generic_service_parser(gdb: GraphDB, ap_pattern: Pattern, port_info: dict, nmap_output: list, svc_kwargs: dict) -> StateChangeSequence:
@@ -56,7 +39,6 @@ def generic_service_parser(gdb: GraphDB, ap_pattern: Pattern, port_info: dict, n
     open_port = ap_pattern.get('openport')
     merge_pattern = open_port.with_edge(Relationship('is_running')).with_node(service)
     changes = [(ap_pattern, "merge", merge_pattern)]
-    changes.extend(add_vulnerability_entities(port_info, merge_pattern))
     return changes
 
 
@@ -83,7 +65,7 @@ class NmapAssetScan(Action):
         asset = pattern.get('asset')
         uuid = artefacts.placeholder("nmap-asset-scan.xml")
         out_path = artefacts.get_path(uuid)
-        result = shell("nmap", ["-Pn", "-sT", "-A", "--top-ports", "1000", "--script=vulners", "--script=banner", asset.get('ip_address'), "-oX", out_path])
+        result = shell("nmap", ["-Pn", "-sT", "-A", "--top-ports", "1000", asset.get('ip_address'), "-oX", out_path])
         result.artefacts["xml_report"] = uuid
         return result
 
@@ -117,11 +99,6 @@ class NmapAssetScan(Action):
             open_port = Entity('OpenPort', alias='openport', number=int(portid), protocol=protocol)
             merge_pattern = asset.with_edge(Relationship('has', direction='r')).with_node(open_port)
             changes.append((asset, "merge", merge_pattern))
-
-            banner = port["banner"]            
-            if banner:
-                open_port.set('banner', banner)
-                changes.append((merge_pattern, "update", open_port))
                 
             service_kwargs = {
                 "protocol": service_name,
