@@ -1,5 +1,7 @@
+import os
 import xml.etree.ElementTree as ET
-from typing import Optional
+import psycopg2
+from psycopg2 import sql
 
 from action_state_interface.action import Action, StateChangeSequence
 from action_state_interface.action_utils import parse_nmap_xml_report, shell
@@ -9,17 +11,25 @@ from kg_api import Entity, GraphDB, Pattern, Relationship
 from kg_api.query import Query
 from Session import SessionManager
 
-
 # Helper function for OS scan parsing
 def nmap_parse_os_version_and_family(xml_str):
     root = ET.fromstring(xml_str)
     os_version = "unknown"
     os_family = "unknown"
-    if osmatch := root.find(".//osmatch"):
+    os_cpe = "unknown"
+    
+    # The previous := check here wasn't safe because Element objects are considered False if they have no children
+    osmatch = root.find(".//osmatch")
+    if osmatch is not None:
         os_version = osmatch.get("name", "unknown")
-        if osclass := osmatch.find(".//osclass"):
+        osclass = osmatch.find(".//osclass")
+        if osclass is not None:
             os_family = osclass.get("osfamily", "unknown")
-    return os_version, os_family
+        cpe = osmatch.find(".//cpe")
+        if cpe is not None:
+            os_cpe = cpe.text
+    
+    return os_version, os_family, os_cpe
 
 # Supporting parser functions
 def ftp_nmap_parser(gdb: GraphDB, ap_pattern: Pattern, port_info: dict, parsed_info: dict, svc_kwargs: dict) -> StateChangeSequence:
@@ -32,6 +42,14 @@ def ftp_nmap_parser(gdb: GraphDB, ap_pattern: Pattern, port_info: dict, parsed_i
     for username in users:
         usr_pattern = Entity('User', username=username).with_edge(Relationship('is_client')).with_node(service)
         changes.append((merge_pattern, "merge", usr_pattern))
+        
+    if svc_kwargs.get("cpe") and svc_kwargs["cpe"] != "unknown":
+        cves = query_scap_for_cve_fuzzy(svc_kwargs["cpe"])
+        for cve in cves:
+            vuln = Entity('Vulnerability', alias='vuln', id=cve["cve_id"], source=cve["source_identifier"], criteria=cve["criteria"])
+            vuln_pattern = service.with_edge(Relationship('exposes', direction='r')).with_node(vuln)
+            changes.append((service, "merge", vuln_pattern))
+            
     return changes
 
 def generic_service_parser(gdb: GraphDB, ap_pattern: Pattern, port_info: dict, nmap_output: list, svc_kwargs: dict) -> StateChangeSequence:
@@ -39,7 +57,66 @@ def generic_service_parser(gdb: GraphDB, ap_pattern: Pattern, port_info: dict, n
     open_port = ap_pattern.get('openport')
     merge_pattern = open_port.with_edge(Relationship('is_running')).with_node(service)
     changes = [(ap_pattern, "merge", merge_pattern)]
+    
+    if svc_kwargs.get("cpe") and svc_kwargs["cpe"] != "unknown":
+        cves = query_scap_for_cve_fuzzy(svc_kwargs["cpe"])
+        for cve in cves:
+            vuln = Entity('Vulnerability', alias='vuln', id=cve["cve_id"], source=cve["source_identifier"], criteria=cve["criteria"])
+            vuln_pattern = service.with_edge(Relationship('exposes', direction='r')).with_node(vuln)
+            changes.append((service, "merge", vuln_pattern))
+                    
     return changes
+
+def query_scap_for_cve_fuzzy(cpe, db_config={}, limit=50):
+    """
+    Query SCAP DB using fuzzy matching of CPE in the criteria field of cve_cpe_matches.
+    """
+    cve_entries = []
+    
+    # Build a fuzzy pattern from cpe
+    parts = cpe.split(':')
+    parts = [p for p in parts[2:] if p != "*"]
+    if len(parts) > 2:
+        system_password = os.environ.get("DATABASE_PASSWORD", "tulpaOSApass24")
+        conn = psycopg2.connect(
+            host=db_config.get('host', 'scap-postgres'),
+            port=db_config.get('port', 5432),
+            dbname=db_config.get('dbname', 'scap'),
+            user=db_config.get('user', 'scap'),
+            password=db_config.get('password', system_password)
+        )
+        try:
+            cur = conn.cursor()
+
+            # SQL template: fuzzy match on criteria
+            query_template = sql.SQL("""
+                SELECT DISTINCT c.id AS cve_id,
+                    c.source_identifier,
+                    m.criteria
+                FROM cve_cpe_matches m
+                LEFT JOIN cve_nodes n ON n.id = m.node_id
+                LEFT JOIN cve_configurations cfg ON cfg.id = n.configuration_id
+                LEFT JOIN cves c ON c.id = cfg.cve_id
+                WHERE m.criteria ILIKE %s
+                LIMIT %s
+            """)
+
+            pattern = "%:" + ":".join(parts) + ":%"
+            cur.execute(query_template, (pattern, limit))
+            rows = cur.fetchall()
+            
+            for row in rows:
+                cve_id, source_identifier, criteria = row
+                cve_entries.append({
+                    'cve_id': cve_id,
+                    'source_identifier': source_identifier,
+                    'criteria': criteria
+                })
+
+        finally:
+            conn.close()
+
+    return cve_entries
 
 
 class NmapAssetScan(Action):
@@ -65,7 +142,7 @@ class NmapAssetScan(Action):
         asset = pattern.get('asset')
         uuid = artefacts.placeholder("nmap-asset-scan.xml")
         out_path = artefacts.get_path(uuid)
-        result = shell("nmap", ["-Pn", "-sT", "-A", "--top-ports", "1000", asset.get('ip_address'), "-oX", out_path])
+        result = shell("nmap", ["-Pn", "-sT", "-sV", "-O", "-p-", asset.get('ip_address'), "-oX", out_path])
         result.artefacts["xml_report"] = uuid
         return result
 
@@ -79,13 +156,22 @@ class NmapAssetScan(Action):
             raise ActionExecutionError(e)
         
         try:
-            os_version, os_family = nmap_parse_os_version_and_family(content)
+            os_version, os_family, os_cpe = nmap_parse_os_version_and_family(content)
         except ET.ParseError as e:
             raise ActionExecutionError(e)
         asset = pattern.get('asset')
         asset.set('os_version', os_version)
         asset.set('os_family', os_family)
+        asset.set('os_cpe', os_cpe)
+
         changes.append((pattern, 'update', asset))
+        
+        if os_cpe != "unknown":
+            cves = query_scap_for_cve_fuzzy(os_cpe)
+            for cve in cves:
+                vuln = Entity('Vulnerability', alias='vuln', id=cve["cve_id"], source=cve["source_identifier"], criteria=cve["criteria"])
+                vuln_pattern = asset.with_edge(Relationship('exposes', direction='r')).with_node(vuln)
+                changes.append((asset, "merge", vuln_pattern))
     
         parsed_info = parse_nmap_xml_report(content)
         for port in parsed_info["ports"]:
@@ -99,11 +185,14 @@ class NmapAssetScan(Action):
             open_port = Entity('OpenPort', alias='openport', number=int(portid), protocol=protocol)
             merge_pattern = asset.with_edge(Relationship('has', direction='r')).with_node(open_port)
             changes.append((asset, "merge", merge_pattern))
-                
+            
+            cpe = port.get("cpe", "unknown")
             service_kwargs = {
                 "protocol": service_name,
-                "version": f"{product} {version}".strip()
+                "version": f"{product} {version}".strip(),
+                "cpe": cpe
             }
+            
             if f := self._parsers.get(service_name):
                 parser_changes = f(gdb, merge_pattern, port, parsed_info, service_kwargs)
                 changes.extend(parser_changes)
