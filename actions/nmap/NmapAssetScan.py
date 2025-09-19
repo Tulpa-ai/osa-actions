@@ -46,7 +46,7 @@ def ftp_nmap_parser(gdb: GraphDB, ap_pattern: Pattern, port_info: dict, parsed_i
     if svc_kwargs.get("cpe") and svc_kwargs["cpe"] != "unknown":
         cves = query_scap_for_cve_fuzzy(svc_kwargs["cpe"])
         for cve in cves:
-            vuln = Entity('Vulnerability', alias='vuln', id=cve["cve_id"], source=cve["source_identifier"], criteria=cve["criteria"])
+            vuln = Entity('Vulnerability', alias='vuln', id=cve)
             vuln_pattern = service.with_edge(Relationship('exposes', direction='r')).with_node(vuln)
             changes.append((service, "merge", vuln_pattern))
             
@@ -61,7 +61,7 @@ def generic_service_parser(gdb: GraphDB, ap_pattern: Pattern, port_info: dict, n
     if svc_kwargs.get("cpe") and svc_kwargs["cpe"] != "unknown":
         cves = query_scap_for_cve_fuzzy(svc_kwargs["cpe"])
         for cve in cves:
-            vuln = Entity('Vulnerability', alias='vuln', id=cve["cve_id"], source=cve["source_identifier"], criteria=cve["criteria"])
+            vuln = Entity('Vulnerability', alias='vuln', id=cve)
             vuln_pattern = service.with_edge(Relationship('exposes', direction='r')).with_node(vuln)
             changes.append((service, "merge", vuln_pattern))
                     
@@ -71,7 +71,7 @@ def query_scap_for_cve_fuzzy(cpe, db_config={}, limit=50):
     """
     Query SCAP DB using fuzzy matching of CPE in the criteria field of cve_cpe_matches.
     """
-    cve_entries = []
+    cve_entries = set()
     
     # Build a fuzzy pattern from cpe
     parts = cpe.split(':')
@@ -106,12 +106,8 @@ def query_scap_for_cve_fuzzy(cpe, db_config={}, limit=50):
             rows = cur.fetchall()
             
             for row in rows:
-                cve_id, source_identifier, criteria = row
-                cve_entries.append({
-                    'cve_id': cve_id,
-                    'source_identifier': source_identifier,
-                    'criteria': criteria
-                })
+                cve_id, _, _ = row
+                cve_entries.add(cve_id)
 
         finally:
             conn.close()
@@ -169,7 +165,7 @@ class NmapAssetScan(Action):
         if os_cpe != "unknown":
             cves = query_scap_for_cve_fuzzy(os_cpe)
             for cve in cves:
-                vuln = Entity('Vulnerability', alias='vuln', id=cve["cve_id"], source=cve["source_identifier"], criteria=cve["criteria"])
+                vuln = Entity('Vulnerability', alias='vuln', id=cve)
                 vuln_pattern = asset.with_edge(Relationship('exposes', direction='r')).with_node(vuln)
                 changes.append((asset, "merge", vuln_pattern))
     
