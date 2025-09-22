@@ -1,4 +1,3 @@
-import os
 import xml.etree.ElementTree as ET
 
 from action_state_interface.action import Action, StateChangeSequence
@@ -64,53 +63,6 @@ def generic_service_parser(ap_pattern: Pattern, parsed_info: dict, svc_kwargs: d
             changes.append((service, "merge", vuln_pattern))
                     
     return changes
-
-def query_scap_for_cve_fuzzy(cpe, db_config={}, limit=50):
-    """
-    Query SCAP DB using fuzzy matching of CPE in the criteria field of cve_cpe_matches.
-    """
-    cve_entries = set()
-    
-    # Build a fuzzy pattern from cpe
-    parts = cpe.split(':')
-    parts = [p for p in parts[2:] if p != "*"]
-    if len(parts) > 2:
-        system_password = os.environ.get("DATABASE_PASSWORD", "tulpaOSApass24")
-        conn = psycopg2.connect(
-            host=db_config.get('host', 'scap-postgres'),
-            port=db_config.get('port', 5432),
-            dbname=db_config.get('dbname', 'scap'),
-            user=db_config.get('user', 'scap'),
-            password=db_config.get('password', system_password)
-        )
-        try:
-            cur = conn.cursor()
-
-            # SQL template: fuzzy match on criteria
-            query_template = sql.SQL("""
-                SELECT DISTINCT c.id AS cve_id,
-                    c.source_identifier,
-                    m.criteria
-                FROM cve_cpe_matches m
-                LEFT JOIN cve_nodes n ON n.id = m.node_id
-                LEFT JOIN cve_configurations cfg ON cfg.id = n.configuration_id
-                LEFT JOIN cves c ON c.id = cfg.cve_id
-                WHERE m.criteria ILIKE %s
-                LIMIT %s
-            """)
-
-            pattern = "%:" + ":".join(parts) + ":%"
-            cur.execute(query_template, (pattern, limit))
-            rows = cur.fetchall()
-            
-            for row in rows:
-                cve_id, _, _ = row
-                cve_entries.add(cve_id)
-
-        finally:
-            conn.close()
-
-    return cve_entries
 
 
 class NmapAssetScan(Action):
