@@ -1,4 +1,5 @@
 import xml.etree.ElementTree as ET
+from xmlrpc.client import boolean
 
 from action_state_interface.action import Action, StateChangeSequence
 from action_state_interface.action_utils import parse_nmap_xml_report, shell, query_scap_for_cve_fuzzy
@@ -29,7 +30,7 @@ def nmap_parse_os_version_and_family(xml_str):
     return os_version, os_family, os_cpe
 
 # Supporting parser functions
-def ftp_nmap_parser(gdb: GraphDB, ap_pattern: Pattern, port_info: dict, parsed_info: dict, svc_kwargs: dict) -> StateChangeSequence:
+def ftp_nmap_parser(ap_pattern: Pattern, parsed_info: dict, svc_kwargs: dict, conn = None) -> StateChangeSequence:
     anon_login = parsed_info["ftp_anon_login"]
     users = parsed_info["ftp_users"]
     service = Entity('Service', alias='service', anonymous_login=anon_login, **svc_kwargs)
@@ -41,24 +42,24 @@ def ftp_nmap_parser(gdb: GraphDB, ap_pattern: Pattern, port_info: dict, parsed_i
         changes.append((merge_pattern, "merge", usr_pattern))
         
     if svc_kwargs.get("cpe") and svc_kwargs["cpe"] != "unknown":
-        cves = query_scap_for_cve_fuzzy(svc_kwargs["cpe"])
-        for cve in cves:
-            vuln = Entity('Vulnerability', alias='vuln', id=cve)
+        cve_dict = query_scap_for_cve_fuzzy(svc_kwargs["cpe"], conn)
+        for cve_id, details in cve_dict.items():
+            vuln = Entity('Vulnerability', alias='vuln', id=cve_id, source=details[0], criteria=details[1])
             vuln_pattern = service.with_edge(Relationship('exposes', direction='r')).with_node(vuln)
             changes.append((service, "merge", vuln_pattern))
             
     return changes
 
-def generic_service_parser(gdb: GraphDB, ap_pattern: Pattern, port_info: dict, nmap_output: list, svc_kwargs: dict) -> StateChangeSequence:
+def generic_service_parser(ap_pattern: Pattern, parsed_info: dict, svc_kwargs: dict, conn = None) -> StateChangeSequence:
     service = Entity('Service', alias='service', **svc_kwargs)
     open_port = ap_pattern.get('openport')
     merge_pattern = open_port.with_edge(Relationship('is_running')).with_node(service)
     changes = [(ap_pattern, "merge", merge_pattern)]
     
     if svc_kwargs.get("cpe") and svc_kwargs["cpe"] != "unknown":
-        cves = query_scap_for_cve_fuzzy(svc_kwargs["cpe"])
-        for cve in cves:
-            vuln = Entity('Vulnerability', alias='vuln', id=cve)
+        cve_dict = query_scap_for_cve_fuzzy(svc_kwargs["cpe"], conn)
+        for cve_id, details in cve_dict.items():
+            vuln = Entity('Vulnerability', alias='vuln', id=cve_id, source=details[0], criteria=details[1])
             vuln_pattern = service.with_edge(Relationship('exposes', direction='r')).with_node(vuln)
             changes.append((service, "merge", vuln_pattern))
                     
@@ -92,7 +93,7 @@ class NmapAssetScan(Action):
         result.artefacts["xml_report"] = uuid
         return result
 
-    def capture_state_change(self, gdb: GraphDB, artefacts: ArtefactManager, pattern: Pattern, output: ActionExecutionResult) -> StateChangeSequence:
+    def capture_state_change(self, gdb: GraphDB, artefacts: ArtefactManager, pattern: Pattern, output: ActionExecutionResult, conn=None) -> StateChangeSequence:
         asset = pattern.get('asset')
         changes: StateChangeSequence = []
         try:
@@ -140,10 +141,10 @@ class NmapAssetScan(Action):
             }
             
             if f := self._parsers.get(service_name):
-                parser_changes = f(gdb, merge_pattern, port, parsed_info, service_kwargs)
+                parser_changes = f(merge_pattern, parsed_info, service_kwargs, conn)
                 changes.extend(parser_changes)
             else:
-                parser_changes = generic_service_parser(gdb, merge_pattern, port, parsed_info, service_kwargs)
+                parser_changes = generic_service_parser(merge_pattern, parsed_info, service_kwargs, conn)
                 changes.extend(parser_changes)
 
         return changes
