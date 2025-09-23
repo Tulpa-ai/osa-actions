@@ -114,7 +114,7 @@ class NmapAssetScan(Action):
         changes.append((pattern, 'update', asset))
         
         if os_cpe != "unknown":
-            cves = query_scap_for_cve_fuzzy(os_cpe)
+            cves = query_scap_for_cve_fuzzy(os_cpe, conn)
             for cve in cves:
                 vuln = Entity('Vulnerability', alias='vuln', id=cve)
                 vuln_pattern = asset.with_edge(Relationship('exposes', direction='r')).with_node(vuln)
