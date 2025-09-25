@@ -1,0 +1,4 @@
+{
+    "unix/misc/distcc_exec": {"protocol": "distccd", "version": "distccd v1"},
+    "unix/irc/unreal_ircd_3281_backdoor": {"protocol": "irc", "version": "UnrealIRCd"}
+}
