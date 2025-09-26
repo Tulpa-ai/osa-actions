@@ -77,6 +77,14 @@
         "vuln_service": {}
     },
     {
+        "name": "MsfFreebsdHttpCitrixDirTraversalRceExploit",
+        "module_name": "freebsd/http/citrix_dir_traversal_rce",
+        "cves": [
+            "CVE-2019-19781"
+        ],
+        "vuln_service": {}
+    },
+    {
         "name": "MsfFreebsdHttpCitrixFormsssoTargetRceExploit",
         "module_name": "freebsd/http/citrix_formssso_target_rce",
         "cves": [
@@ -2248,6 +2256,31 @@
         "vuln_service": {}
     },
     {
+        "name": "MsfLinuxHttpZimbraCpioCve202241352Exploit",
+        "module_name": "linux/http/zimbra_cpio_cve_2022_41352",
+        "cves": [
+            "CVE-2022-41352"
+        ],
+        "vuln_service": {}
+    },
+    {
+        "name": "MsfLinuxHttpZimbraMboximportCve202227925Exploit",
+        "module_name": "linux/http/zimbra_mboximport_cve_2022_27925",
+        "cves": [
+            "CVE-2022-27925",
+            "CVE-2022-37042"
+        ],
+        "vuln_service": {}
+    },
+    {
+        "name": "MsfLinuxHttpZimbraUnrarCve202230333Exploit",
+        "module_name": "linux/http/zimbra_unrar_cve_2022_30333",
+        "cves": [
+            "CVE-2022-30333"
+        ],
+        "vuln_service": {}
+    },
+    {
         "name": "MsfLinuxHttpZimbraXxeRceExploit",
         "module_name": "linux/http/zimbra_xxe_rce",
         "cves": [
@@ -2542,6 +2575,15 @@
         "module_name": "linux/misc/quest_pmmasterd_bof",
         "cves": [
             "CVE-2017-6553"
+        ],
+        "vuln_service": {}
+    },
+    {
+        "name": "MsfLinuxMiscSaltstackSaltUnauthRceExploit",
+        "module_name": "linux/misc/saltstack_salt_unauth_rce",
+        "cves": [
+            "CVE-2020-11651",
+            "CVE-2020-11652"
         ],
         "vuln_service": {}
     },
@@ -3408,6 +3450,15 @@
         "vuln_service": {}
     },
     {
+        "name": "MsfMultiHttpApacheNormalizePathRceExploit",
+        "module_name": "multi/http/apache_normalize_path_rce",
+        "cves": [
+            "CVE-2021-41773",
+            "CVE-2021-42013"
+        ],
+        "vuln_service": {}
+    },
+    {
         "name": "MsfMultiHttpApacheOfbizForgotPasswordDirectoryTraversalExploit",
         "module_name": "multi/http/apache_ofbiz_forgot_password_directory_traversal",
         "cves": [
@@ -4060,6 +4111,14 @@
         "module_name": "multi/http/log1cms_ajax_create_folder",
         "cves": [
             "CVE-2011-4825"
+        ],
+        "vuln_service": {}
+    },
+    {
+        "name": "MsfMultiHttpLog4shellHeaderInjectionExploit",
+        "module_name": "multi/http/log4shell_header_injection",
+        "cves": [
+            "CVE-2021-44228"
         ],
         "vuln_service": {}
     },
@@ -5054,6 +5113,22 @@
         "vuln_service": {}
     },
     {
+        "name": "MsfMultiHttpVmwareVcenterLog4shellExploit",
+        "module_name": "multi/http/vmware_vcenter_log4shell",
+        "cves": [
+            "CVE-2021-44228"
+        ],
+        "vuln_service": {}
+    },
+    {
+        "name": "MsfMultiHttpVmwareVcenterUploadovaRceExploit",
+        "module_name": "multi/http/vmware_vcenter_uploadova_rce",
+        "cves": [
+            "CVE-2021-21972"
+        ],
+        "vuln_service": {}
+    },
+    {
         "name": "MsfMultiHttpVtigerInstallRceExploit",
         "module_name": "multi/http/vtiger_install_rce",
         "cves": [
@@ -5425,6 +5500,14 @@
         "module_name": "multi/misc/java_jmx_server",
         "cves": [
             "CVE-2015-2342"
+        ],
+        "vuln_service": {}
+    },
+    {
+        "name": "MsfMultiMiscJavaRmiServerExploit",
+        "module_name": "multi/misc/java_rmi_server",
+        "cves": [
+            "CVE-2011-3556"
         ],
         "vuln_service": {}
     },
@@ -5848,6 +5931,14 @@
         "module_name": "solaris/samba/trans2open",
         "cves": [
             "CVE-2003-0201"
+        ],
+        "vuln_service": {}
+    },
+    {
+        "name": "MsfSolarisSshPamUsernameBofExploit",
+        "module_name": "solaris/ssh/pam_username_bof",
+        "cves": [
+            "CVE-2020-14871"
         ],
         "vuln_service": {}
     },
@@ -7005,6 +7096,14 @@
         "module_name": "windows/backupexec/remote_agent",
         "cves": [
             "CVE-2005-0773"
+        ],
+        "vuln_service": {}
+    },
+    {
+        "name": "MsfWindowsBackupexecSslUafExploit",
+        "module_name": "windows/backupexec/ssl_uaf",
+        "cves": [
+            "CVE-2017-8895"
         ],
         "vuln_service": {}
     },
@@ -13287,6 +13386,14 @@
         "vuln_service": {}
     },
     {
+        "name": "MsfWindowsRdpCve20190708BluekeepRceExploit",
+        "module_name": "windows/rdp/cve_2019_0708_bluekeep_rce",
+        "cves": [
+            "CVE-2019-0708"
+        ],
+        "vuln_service": {}
+    },
+    {
         "name": "MsfWindowsSageX3AdxsrvAuthBypassCmdExecExploit",
         "module_name": "windows/sage/x3_adxsrv_auth_bypass_cmd_exec",
         "cves": [
@@ -13725,6 +13832,29 @@
         "module_name": "windows/smb/ms15_020_shortcut_icon_dllloader",
         "cves": [
             "CVE-2015-0096"
+        ],
+        "vuln_service": {}
+    },
+    {
+        "name": "MsfWindowsSmbMs17010EternalblueExploit",
+        "module_name": "windows/smb/ms17_010_eternalblue",
+        "cves": [
+            "CVE-2017-0143",
+            "CVE-2017-0144",
+            "CVE-2017-0145",
+            "CVE-2017-0146",
+            "CVE-2017-0147",
+            "CVE-2017-0148"
+        ],
+        "vuln_service": {}
+    },
+    {
+        "name": "MsfWindowsSmbMs17010PsexecExploit",
+        "module_name": "windows/smb/ms17_010_psexec",
+        "cves": [
+            "CVE-2017-0143",
+            "CVE-2017-0146",
+            "CVE-2017-0147"
         ],
         "vuln_service": {}
     },

@@ -18,6 +18,8 @@ def get_msf_client() -> MsfRpcClient:
 known_options = {'RHOSTS', 'RHOST', 'RPORT', 'rhost', 'LHOST'}
 def requires_only_known(module_name: str, exploit) -> bool:
     """Check if the module can be run when only specifying the host and port"""
+    if exploit.default_options:
+        return all(required in known_options or required in exploit.default_options for required in exploit.missing_required)
     return all(required in known_options for required in exploit.missing_required)
 
 with open("missing_cves.json", "r") as f:
