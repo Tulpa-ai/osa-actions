@@ -18,10 +18,7 @@ def get_msf_client() -> MsfRpcClient:
 known_options = {'RHOSTS', 'RHOST', 'RPORT', 'rhost', 'LHOST'}
 def requires_only_known(module_name: str, exploit) -> bool:
     """Check if the module can be run when only specifying the host and port"""
-    only_known = all(required in known_options for required in exploit.missing_required)
-    if not only_known:
-        tqdm.write(f"Skipping {module_name} because it requires {set(exploit.missing_required) - set(known_options)}")
-    return only_known
+    return all(required in known_options for required in exploit.missing_required)
 
 with open("missing_cves.json", "r") as f:
     missing_cves = json.load(f)
@@ -44,10 +41,12 @@ if __name__ == "__main__":
     msf_client = get_msf_client()
 
     success_count = 0
-    skip_count = 0
+    missing_required = 0
+    no_target = 0
+    malformatted_name = 0
     configs = []
 
-    main_bar = tqdm(msf_client.modules.exploits, desc=f"Generating Exploit Actions: ✓ {success_count} | ✗ {skip_count}", smoothing=0.01)
+    main_bar = tqdm(msf_client.modules.exploits, desc=f"Generating Exploit Actions: ✓ {success_count} ✗t {no_target} ✗r {missing_required} ✗p {malformatted_name}", smoothing=0.01)
 
     for module_name in main_bar:
         parts = module_name.split("/")
@@ -55,21 +54,27 @@ if __name__ == "__main__":
             vuln_service = get_vulnerable_service(module_name)
             exploit = msf_client.modules.use("exploit", module_name)
             cves = get_cves(module_name, exploit)
-            if (len(cves) or len(vuln_service)) and requires_only_known(module_name, exploit):
-                class_name = derive_class_name(parts)
-                configs.append({
-                    "name": class_name,
-                    "module_name": module_name,
-                    "cves": cves,
-                    "vuln_service": vuln_service
-                })            
-                success_count += 1
+            if (len(cves) or len(vuln_service)):
+                if requires_only_known(module_name, exploit):
+                    class_name = derive_class_name(parts)
+                    configs.append({
+                        "name": class_name,
+                        "module_name": module_name,
+                        "cves": cves,
+                        "vuln_service": vuln_service
+                    })            
+                    success_count += 1
+                else:
+                    # tqdm.write(f"Skipping {module_name} because it requires {set(exploit.missing_required) - set(known_options)}")
+                    missing_required += 1
             else:
-                skip_count += 1
+                # tqdm.write(f"Skipping {module_name} because we have no way to target it (no CVE in the metadata, no entry in missing_cves.json)")
+                no_target += 1
         else:
-            skip_count += 1
+            # tqdm.write(f"Skipping {module_name} because its name is malformatted (wrong number of parts)")
+            malformatted_name += 1
 
-        main_bar.set_description(f"Generating MSF configs: ✓ {success_count} | ✗ {skip_count}")
+        main_bar.set_description(f"Generating Exploit Actions: ✓ {success_count} ✗t {no_target} ✗r {missing_required} ✗p {malformatted_name}")
         main_bar.refresh()
 
     with open("msfconfigs.json", "w") as f:
