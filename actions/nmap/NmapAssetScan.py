@@ -1,5 +1,4 @@
 import xml.etree.ElementTree as ET
-from xmlrpc.client import boolean
 
 from action_state_interface.action import Action, StateChangeSequence
 from action_state_interface.action_utils import parse_nmap_xml_report, shell, query_scap_for_cve_fuzzy
@@ -114,9 +113,9 @@ class NmapAssetScan(Action):
         changes.append((pattern, 'update', asset))
         
         if os_cpe != "unknown":
-            cves = query_scap_for_cve_fuzzy(os_cpe, conn)
-            for cve in cves:
-                vuln = Entity('Vulnerability', alias='vuln', id=cve)
+            cve_dict = query_scap_for_cve_fuzzy(os_cpe, conn)
+            for cve_id, details in cve_dict.items():
+                vuln = Entity('Vulnerability', alias='vuln', id=cve_id, source=details[0], criteria=details[1])
                 vuln_pattern = asset.with_edge(Relationship('exposes', direction='r')).with_node(vuln)
                 changes.append((asset, "merge", vuln_pattern))
     
