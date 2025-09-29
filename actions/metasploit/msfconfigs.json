@@ -6080,6 +6080,14 @@
         "vuln_service": {}
     },
     {
+        "name": "MsfUnixHttpFreepbxUnauthSqliToRceExploit",
+        "module_name": "unix/http/freepbx_unauth_sqli_to_rce",
+        "cves": [
+            "CVE-2025-57819"
+        ],
+        "vuln_service": {}
+    },
+    {
         "name": "MsfUnixHttpLaravelTokenUnserializeExecExploit",
         "module_name": "unix/http/laravel_token_unserialize_exec",
         "cves": [
@@ -13846,7 +13854,10 @@
             "CVE-2017-0147",
             "CVE-2017-0148"
         ],
-        "vuln_service": {}
+        "vuln_service": {
+            "protocol": "microsoft-ds",
+            "version": "Microsoft Windows 7 - 10 microsoft-ds"
+        }
     },
     {
         "name": "MsfWindowsSmbMs17010PsexecExploit",
