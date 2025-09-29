@@ -1,10 +1,9 @@
 import os
-from typing import Union
 from pathlib import Path
 from ftplib import FTP, error_perm
 from action_state_interface.action import Action, StateChangeSequence
 from action_state_interface.exec import ActionExecutionError, ActionExecutionResult
-from kg_api import Entity, GraphDB, MultiPattern, Pattern, Relationship
+from kg_api import Entity, GraphDB , Pattern, Relationship
 from kg_api.query import Query
 from Session import SessionManager
 
@@ -45,7 +44,8 @@ class FtpDownloadFile(Action):
             .with_node(service)
             .connects_to(drive)
         )
-        file_pattern = drive.directed_path_to(Entity('File', alias='file'))
+        # Placeholder for a more intelligent approach to file download selection
+        file_pattern = drive.directed_path_to(Entity('File', alias='file', filename='id_rsa'))
         file_pattern.set_alias('path')
         match_pattern = service_pattern.combine(file_pattern).combine(session)
         query = Query()
