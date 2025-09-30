@@ -1,5 +1,4 @@
 import xml.etree.ElementTree as ET
-from xmlrpc.client import boolean
 
 from action_state_interface.action import Action, StateChangeSequence
 from action_state_interface.action_utils import parse_nmap_xml_report, shell, query_scap_for_cve_fuzzy

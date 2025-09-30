@@ -1,5 +1,0 @@
-{
-    "unix/misc/distcc_exec": {"protocol": "distccd", "version": "distccd v1"},
-    "unix/irc/unreal_ircd_3281_backdoor": {"protocol": "irc", "version": "UnrealIRCd"},
-    "windows/smb/ms17_010_eternalblue": {"protocol": "microsoft-ds", "version": "Microsoft Windows 7 - 10 microsoft-ds"}
-}

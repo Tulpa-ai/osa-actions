@@ -29,14 +29,6 @@ def get_cves(module_name: str, exploit) -> list:
     if module_name in missing_cves:
         cves.extend(missing_cves[module_name])
     return cves
-    
-with open("vulnerable_services.json", "r") as f:
-    vulnerable_services = json.load(f)
-def get_vulnerable_service(module: str) -> dict:
-    service_info = {}
-    if module in vulnerable_services:
-        service_info = vulnerable_services[module]
-    return service_info
 
 if __name__ == "__main__":
     """Generate all exploit actions dynamically"""
@@ -53,17 +45,15 @@ if __name__ == "__main__":
     for module_name in main_bar:
         parts = module_name.split("/")
         if len(parts) == 3:
-            vuln_service = get_vulnerable_service(module_name)
             exploit = msf_client.modules.use("exploit", module_name)
             cves = get_cves(module_name, exploit)
-            if (len(cves) or len(vuln_service)):
+            if len(cves):
                 if requires_only_known(module_name, exploit):
                     class_name = derive_class_name(parts)
                     configs.append({
                         "name": class_name,
                         "module_name": module_name,
-                        "cves": cves,
-                        "vuln_service": vuln_service
+                        "cves": cves
                     })            
                     success_count += 1
                 else:
