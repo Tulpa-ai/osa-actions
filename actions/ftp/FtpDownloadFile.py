@@ -50,6 +50,7 @@ class FtpDownloadFile(Action):
         match_pattern = service_pattern.combine(file_pattern).combine(session)
         query = Query()
         query.match(match_pattern)
+        query.where(service.id() == session.executes_on)
         query.ret_all()
         return query
 
