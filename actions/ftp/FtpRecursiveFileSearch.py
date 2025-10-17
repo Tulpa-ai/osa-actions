@@ -51,7 +51,6 @@ def filter_files_by_wordlist(file_list: list[str], wordlist: list[str], similari
                 out.append(base_names_dict.get(file, file))
     return out
 
-# ...existing code...
 class FtpRecursiveFileSearch(Action):
     def __init__(self):
         super().__init__(
@@ -79,6 +78,7 @@ class FtpRecursiveFileSearch(Action):
         negate_pattern = service.directed_path_to(Entity('File'))
         query = Query()
         query.match(match_pattern)
+        query.where(service.id() == session.executes_on)
         query.where(negate_pattern, _not=True)
         query.ret_all()
         return query

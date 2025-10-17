@@ -78,7 +78,7 @@ class LocalRecursiveFileSearch(Action):
         Returns:
             list[Union[Pattern, MultiPattern]]: A list of patterns representing target locations.
         """
-        session = Entity('Session', alias='session', protocol='ssh')
+        session = Entity('Session', alias='session', protocol='ssh', active=True)
         asset = Entity('Asset', alias='asset')
         service = Entity('Service', alias='service', protocol='ssh')
         credentials = Entity('Credentials', alias='credentials')

@@ -32,7 +32,7 @@ class IpRoute(Action):
         """
         get_target_patterns check for IP route. This action finds other subnets that can be scanned.
         """
-        session = Entity('Session', alias='session')
+        session = Entity('Session', alias='session', active=True)
         # NB: this basic session type check will need to be removed when we do session management properly
         # matching_sessions = kg.match(session).where("NOT session.protocol IN ['rsh', 'ftp', 'msf']")
         # if not matching_sessions:
