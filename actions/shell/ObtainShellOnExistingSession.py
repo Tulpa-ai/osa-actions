@@ -34,7 +34,7 @@ class ObtainShellOnExistingSession(Action):
         """
         get_target_patterns check to find a valid session
         """
-        session = Entity(type='Session', alias='session')
+        session = Entity(type='Session', alias='session', active=True)
         # res = kg.match(session).where("""session.listed_sudo_permissions IS NULL""")
         # ret = [p for p in res if p.get('session').get('protocol') in ['msf']]
         query = Query()
