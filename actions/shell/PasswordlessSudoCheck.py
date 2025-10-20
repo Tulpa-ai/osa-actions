@@ -32,7 +32,7 @@ class PasswordlessSudoCheck(Action):
         """
         get_target_patterns check to find a session.
         """
-        session = Entity(type='Session', alias='session')
+        session = Entity(type='Session', alias='session', active=True)
         query = Query()
         query.match(session)
         query.where(session.listed_sudo_permissions.is_null())
