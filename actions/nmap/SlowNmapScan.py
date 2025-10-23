@@ -12,6 +12,7 @@ from artefacts.ArtefactManager import ArtefactManager
 from kg_api import Entity, GraphDB, Pattern, Relationship, MultiPattern
 from kg_api.query import Query
 from Session import SessionManager
+from motifs import ActionInputMotif, ActionOutputMotif
 
 base_path = pathlib.Path(__file__).parent.parent.parent
 
@@ -25,6 +26,61 @@ class SlowNmapScan(Action):
         super().__init__("SlowNmapScan", "T1046", "TA0007", ["quiet", "slow"])
         self.noise = 0.2
         self.impact = 0
+        self.input_motif = self.build_input_motif()
+        self.output_motif = self.build_output_motif_templates()
+
+    @classmethod
+    def build_input_motif(cls) -> ActionInputMotif:
+        """
+        Build the input motif for SlowNmapScan.
+
+        Defines the required subnet entity that must exist for the scan to be applicable.
+
+        Returns:
+            ActionInputMotif: Input motif requiring a Subnet entity
+        """
+        subnet = Entity('Subnet', alias='subnet')
+        return ActionInputMotif(
+            name="InputMotif_SlowNmapScan",
+            description="Input requirements for slow NMAP scan on subnet",
+            pattern=subnet
+        )
+
+    @classmethod
+    def build_output_motif_templates(cls) -> ActionOutputMotif:
+        """
+        Build the output motif templates for SlowNmapScan.
+
+        Defines templates for:
+        - Discovered assets (linked to subnet via belongs_to relationship)
+        - Open ports (linked to assets via has relationship)
+
+        Returns:
+            ActionOutputMotif: Output motif with asset and port templates
+        """
+        subnet = Entity('Subnet', alias='subnet')
+
+        output_motif = ActionOutputMotif(
+            name="slow_nmap_scan_output",
+            description="Templates for discovered assets and open ports (0-N instances each)"
+        )
+
+        output_motif.add_template(
+            entity_template=Entity('Asset', alias='asset'),
+            template_name="discovered_asset",
+            match_on=subnet,
+            relationship_type='belongs_to'
+        )
+
+        output_motif.add_template(
+            entity_template=Entity('OpenPort', alias='port'),
+            template_name="discovered_port",
+            match_on="discovered_asset",
+            relationship_type='has',
+            invert_relationship=True
+        )
+
+        return output_motif
 
     def expected_outcome(self, pattern: Pattern) -> list[str]:
         """
@@ -40,9 +96,8 @@ class SlowNmapScan(Action):
         get_target_patterns check for slow NMAP. This NMAP finds other assets on the
         network but does not identify open ports or services.
         """
-        sub = Entity('Subnet', alias='subnet')
         query = Query()
-        query.match(sub)
+        query.match(self.input_motif.pattern)
         query.ret_all()
         return query
 
@@ -71,11 +126,9 @@ class SlowNmapScan(Action):
         )
         return res
 
-    def capture_state_change(
-        self, gdb: GraphDB, artefacts: ArtefactManager, pattern: Pattern, output: ActionExecutionResult
-    ) -> StateChangeSequence:
+    def parse_nmap_output(self, output: ActionExecutionResult) -> dict[str, list[str]]:
         """
-        Add Asset entities and OpenPort entities to knowledge graph.
+        Parse NMAP output to extract discovered IP addresses and their open ports.
         """
         ip_pattern = r"Nmap scan report for (\d{1,3}(?:\.\d{1,3}){3})"
         port_pattern = r"(\d+/tcp)\s+open"
@@ -93,27 +146,59 @@ class SlowNmapScan(Action):
                 if port_match:
                     results[current_ip].append(port_match.group(1))
 
-        subnet = pattern.get('subnet')
+        return dict(results)
 
+    def populate_templates(
+        self, gdb: GraphDB, pattern: Pattern, discovered_data: dict[str, list[str]]
+    ) -> StateChangeSequence:
+        """
+        Create state changes from parsed NMAP data using output motif templates.
+
+        - Reset the output motif context for this execution
+        - Get the actual subnet from the input pattern
+        - Create a list of state changes
+        - Instantiate the discovered_asset template with dynamic subnet matching
+        - Instantiate the discovered_port template for each open port
+        - Return the list of state changes
+        
+        Args:
+            gdb: GraphDB instance for checking existing entities
+            pattern: Pattern containing the subnet entity
+            discovered_data: Dictionary mapping IP addresses to lists of open ports
+            
+        Returns:
+            StateChangeSequence containing all state changes
+        """
+        self.output_motif.reset_context()
+        subnet = pattern.get('subnet')
         changes: StateChangeSequence = []
-        for ip, ports in results.items():
-            asset = Entity('Asset', alias='asset', ip_address=ip)
-            asset_pattern = gdb.get_matching(asset)
+        for ip, ports in discovered_data.items():
+            asset_change = self.output_motif.instantiate(
+                "discovered_asset", 
+                match_on_override=subnet,
+                ip_address=ip
+            )
+            changes.append(asset_change)
             
-            if asset_pattern:
-                asset = asset_pattern[0].get("asset")
-                sub_match_pattern = subnet.combine(asset)
-            else:
-                sub_match_pattern = subnet
-                
-            sub_asset_pattern = asset.with_edge(Relationship('belongs_to')).with_node(subnet)
-            
-            changes.append((sub_match_pattern, "merge", sub_asset_pattern))
             for port in ports:
                 num, protocol = port.split('/')
-                port_pattern = asset.with_edge(Relationship('has')).with_node(
-                    Entity('OpenPort', alias='port', number=int(num), protocol=protocol)
+                port_change = self.output_motif.instantiate(
+                    "discovered_port",
+                    number=int(num),
+                    protocol=protocol
                 )
-                changes.append((sub_asset_pattern, "merge", port_pattern))
+                changes.append(port_change)
 
+        return changes
+
+    def capture_state_change(
+        self, gdb: GraphDB, artefacts: ArtefactManager, pattern: Pattern, output: ActionExecutionResult
+    ) -> StateChangeSequence:
+        """
+        Add Asset entities and OpenPort entities to knowledge graph.
+        - Parse the NMAP output to extract discovered data
+        - Create state changes from the parsed data
+        """
+        discovered_data = self.parse_nmap_output(output)
+        changes = self.populate_templates(gdb, pattern, discovered_data)
         return changes
