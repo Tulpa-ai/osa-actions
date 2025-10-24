@@ -75,7 +75,7 @@ class HttpServiceScan(Action):
         drive = Entity(type='Drive', alias='drive', location=f'HTTP://{ip}')
 
         merge_pattern = service.with_edge(Relationship(type='accesses')).with_node(drive)
-        changes: StateChangeSequence = [(pattern, "match", merge_pattern)]
+        changes: StateChangeSequence = [(pattern, "merge_if_not_match", merge_pattern)]
 
         match_pattern = asset.directed_path_to(service).directed_path_to(drive)
 
