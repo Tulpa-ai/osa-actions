@@ -372,7 +372,6 @@ class NmapAssetScan(Action):
             # Create service using motif template with service-specific data
             service_change = self.output_motif.instantiate(
                 "discovered_service",
-                number=int(port_data["portid"]),
                 **service_info["service_data"]
             )
             changes.append(service_change)
