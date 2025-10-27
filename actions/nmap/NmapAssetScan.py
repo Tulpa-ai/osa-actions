@@ -134,12 +134,16 @@ class NmapAssetScan(Action):
         Returns:
             ActionInputMotif: Input motif requiring a Asset entity
         """
-        asset = Entity('Asset', alias='asset')
-        return ActionInputMotif(
+        input_motif = ActionInputMotif(
             name="InputMotif_NmapAssetScan",
             description="Input requirements for NMAP asset scan on asset",
-            pattern=asset
         )
+        input_motif.add_template(
+            entity=Entity('Asset', alias='asset'),
+            template_name="asset",
+            expected_attributes=["ip_address"]
+        )
+        return input_motif
 
     @classmethod
     def build_output_motif_templates(cls) -> ActionOutputMotif:
@@ -162,35 +166,35 @@ class NmapAssetScan(Action):
             description="Templates for discovered ports, services, vulnerabilities, and users (0-N instances each)"
         )
         output_motif.add_template(
-            entity_template=Entity('OpenPort', alias='port'),
+            entity=Entity('OpenPort', alias='port'),
             template_name="discovered_port",
             match_on=asset,
             relationship_type='has',
             invert_relationship=True
         )
         output_motif.add_template(
-            entity_template=Entity('Service', alias='service'),
+            entity=Entity('Service', alias='service'),
             template_name="discovered_service",
             match_on="discovered_port",
             relationship_type='is_running',
             invert_relationship=True
         )
         output_motif.add_template(
-            entity_template=Entity('Vulnerability', alias='vuln'),
+            entity=Entity('Vulnerability', alias='vuln'),
             template_name="asset_vulnerability",
             match_on=asset,
             relationship_type='exposes',
             invert_relationship=True
         )
         output_motif.add_template(
-            entity_template=Entity('Vulnerability', alias='vuln'),
+            entity=Entity('Vulnerability', alias='vuln'),
             template_name="service_vulnerability",
             match_on="discovered_service",
             relationship_type='exposes',
             invert_relationship=True
         )
         output_motif.add_template(
-            entity_template=Entity('User', alias='user'),
+            entity=Entity('User', alias='user'),
             template_name="discovered_user",
             match_on="discovered_service",
             relationship_type='is_client',
@@ -207,8 +211,7 @@ class NmapAssetScan(Action):
         """
         Get target query using input motif to find valid Asset entities for scanning.
         """
-        query = Query()
-        query.match(self.input_motif.pattern)
+        query = self.input_motif.get_query()
         query.ret_all()
         return query
 

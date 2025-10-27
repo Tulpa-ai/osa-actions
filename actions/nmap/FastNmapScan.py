@@ -39,12 +39,16 @@ class FastNmapScan(Action):
         Returns:
             ActionInputMotif: Input motif requiring a Subnet entity
         """
-        subnet = Entity('Subnet', alias='subnet')
-        return ActionInputMotif(
+        input_motif = ActionInputMotif(
             name="InputMotif_FastNmapScan",
             description="Input requirements for fast NMAP scan on subnet",
-            pattern=subnet
         )
+        input_motif.add_template(
+            entity=Entity('Subnet', alias='subnet'),
+            template_name="subnet",
+            expected_attributes=["network_address"]
+        )
+        return input_motif
 
     @classmethod
     def build_output_motif_templates(cls) -> ActionOutputMotif:
@@ -66,14 +70,14 @@ class FastNmapScan(Action):
         )
 
         output_motif.add_template(
-            entity_template=Entity('Asset', alias='asset'),
+            entity=Entity('Asset', alias='asset'),
             template_name="discovered_asset",
             match_on=subnet,
             relationship_type='belongs_to'
         )
 
         output_motif.add_template(
-            entity_template=Entity('OpenPort', alias='port'),
+            entity=Entity('OpenPort', alias='port'),
             template_name="discovered_port",
             match_on="discovered_asset",
             relationship_type='has',
@@ -96,8 +100,7 @@ class FastNmapScan(Action):
         get_target_patterns check for fast NMAP. This NMAP finds other assets on the
         network but does not identify open ports or services.
         """
-        query = Query()
-        query.match(self.input_motif.pattern)
+        query = self.input_motif.get_query()
         query.ret_all()
         return query
 
