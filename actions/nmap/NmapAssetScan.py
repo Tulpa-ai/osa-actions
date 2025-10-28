@@ -122,7 +122,7 @@ class NmapAssetScan(Action):
         self.impact = 0
         self._parsers = {'ftp': ftp_nmap_parser}
         self.input_motif = self.build_input_motif()
-        self.output_motif = self.build_output_motif_templates()
+        self.output_motif = self.build_output_motif()
 
     @classmethod
     def build_input_motif(cls) -> ActionInputMotif:
@@ -146,7 +146,7 @@ class NmapAssetScan(Action):
         return input_motif
 
     @classmethod
-    def build_output_motif_templates(cls) -> ActionOutputMotif:
+    def build_output_motif(cls) -> ActionOutputMotif:
         """
         Build the output motif templates for NmapAssetScan.
 
@@ -223,7 +223,7 @@ class NmapAssetScan(Action):
         result.artefacts["xml_report"] = uuid
         return result
 
-    def parse_nmap_output(self, artefacts: ArtefactManager, output: ActionExecutionResult, conn=None) -> dict:
+    def parse_output(self, artefacts: ArtefactManager, output: ActionExecutionResult, conn=None) -> dict:
         """
         Parse the nmap XML output and extract all relevant information for motif-based approach.
 
@@ -311,7 +311,7 @@ class NmapAssetScan(Action):
             "processed_ports": processed_ports
         }
 
-    def populate_templates(self, gdb: GraphDB, pattern: Pattern, discovered_data: dict, conn=None) -> StateChangeSequence:
+    def populate_output_motif(self, gdb: GraphDB, pattern: Pattern, discovered_data: dict, conn=None) -> StateChangeSequence:
         """
         Create state changes from parsed nmap data using the new parsing approach and motif templates.
 
@@ -328,7 +328,7 @@ class NmapAssetScan(Action):
         Args:
             gdb: GraphDB instance
             pattern: Input pattern containing the asset
-            discovered_data: Dictionary containing parsed nmap data from parse_nmap_output
+            discovered_data: Dictionary containing parsed nmap data from parse_output
             conn: Database connection for CVE queries
 
         Returns:
@@ -407,6 +407,6 @@ class NmapAssetScan(Action):
         """
         Capture the state changes from the nmap output.
         """
-        discovered_data = self.parse_nmap_output(artefacts, output, conn)
-        changes = self.populate_templates(gdb, pattern, discovered_data, conn)
+        discovered_data = self.parse_output(artefacts, output, conn)
+        changes = self.populate_output_motif(gdb, pattern, discovered_data, conn)
         return changes
