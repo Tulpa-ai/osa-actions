@@ -11,8 +11,12 @@ def derive_class_name(parts: list) -> str:
 
 def get_msf_client() -> MsfRpcClient:
     """Create and return an MsfRpcClient instance lazily"""
-    password = os.environ.get("MSFRPCD_PASSWORD", "tulpaOSApass24")
+    password = os.environ.get("MSFRPCD_PASSWORD")
     port = int(os.environ.get("MSF_PORT", 55552))
+    
+    if not password:
+        raise ValueError("MSFRPCD_PASSWORD environment variable is required")
+    
     return MsfRpcClient(password, port=port)
 
 known_options = {'RHOSTS', 'RHOST', 'RPORT', 'rhost', 'LHOST'}
