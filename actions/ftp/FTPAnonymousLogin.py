@@ -61,7 +61,9 @@ class FTPAnonymousLogin(Action):
         output_motif.add_template(
             template_name="discovered_session",
             entity=Entity('Session', alias='session', protocol='ftp'),
-            expected_attributes=["id", "executes_on"],
+            relationship_type="executes_on",
+            match_on=Entity('Service', alias='service', protocol='ftp', anonymous_login=True),
+            expected_attributes=["id"],
         )
 
         return output_motif
@@ -91,9 +93,9 @@ class FTPAnonymousLogin(Action):
         changes: StateChangeSequence = []
         session_change = self.output_motif.instantiate(
             template_name="discovered_session",
+            match_on_override=service,
             protocol="ftp",
             id=discovered_data["session"],
-            executes_on=service._id
         )
         changes.append(session_change)
         return changes

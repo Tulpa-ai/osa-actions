@@ -35,7 +35,7 @@ class SshLoginWithCredentials(Action):
     """
 
     def __init__(self):
-        super().__init__("SshLoginCredentials", "T1078", "TA0001", ["quiet", "fast"])
+        super().__init__("SshLoginWithCredentials", "T1078", "TA0001", ["quiet", "fast"])
         self.noise = 0.1
         self.impact = 0.5
 
@@ -123,6 +123,6 @@ class SshLoginWithCredentials(Action):
             password=password,
             active=True,
             id=output.session,
-            executes_on=service._id,
         )
-        return [(None, "merge", session)]
+        session_service_pattern = session.with_edge(Relationship('executes_on', direction='r')).with_node(service)
+        return [(service, "merge", session_service_pattern)]

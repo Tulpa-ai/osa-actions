@@ -66,5 +66,6 @@ class RshRootLogin(Action):
         if not legacy_port:
             raise ActionExecutionError
 
-        session = Entity('Session', alias='session', protocol='rsh', id=output.session, executes_on=legacy_port._id)
-        return [(None, "merge", session)]
+        session = Entity('Session', alias='session', protocol='rsh', id=output.session)
+        session_port_pattern = session.with_edge(Relationship('executes_on', direction='r')).with_node(legacy_port)
+        return [(legacy_port, "merge", session_port_pattern)]

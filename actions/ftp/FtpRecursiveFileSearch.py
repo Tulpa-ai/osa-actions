@@ -68,17 +68,18 @@ class FtpRecursiveFileSearch(Action):
         session = Entity('Session', alias='session', protocol='ftp')
         asset = Entity('Asset', alias='asset')
         service = Entity('Service', alias='service', protocol='ftp')
+        session_service_pattern = session.with_edge(Relationship('executes_on', direction='r')).with_node(service)
+
         match_pattern = (
             asset.with_edge(Relationship('has'))
             .with_node(Entity('OpenPort', alias='openport'))
             .with_edge(Relationship('is_running'))
             .with_node(service)
-            .combine(session)
+            .combine(session_service_pattern)
         )
         negate_pattern = service.directed_path_to(Entity('File'))
         query = Query()
         query.match(match_pattern)
-        query.where(service.id() == session.executes_on)
         query.where(negate_pattern, _not=True)
         query.ret_all()
         return query
