@@ -36,13 +36,19 @@ class BusyBoxGTFO(Action):
         command.
         """
         session = Entity('Session', alias='session')
+
+        service = Entity(type='Service', alias='service')
         user = Entity(type='User', alias='user')
-        pattern = (
+
+        session_pattern = session.with_edge(Relationship('executes_on', direction='r')).with_node(service)
+        permission_pattern = (
             user
             .with_edge(Relationship(type='has'))
             .with_node(Entity(type='Permission', alias='permission', command='/usr/bin/busybox'))
-            .combine(session)
         )
+        user_service_pattern = user.with_edge(Relationship('is_client')).with_node(service)
+        pattern = permission_pattern.combine(user_service_pattern).combine(session_pattern)
+
         query = Query()
         query.match(pattern)
         query.where(user.username == session.username)
@@ -72,10 +78,12 @@ class BusyBoxGTFO(Action):
         Update session object to reflect a change in protocol.
         """
         session = pattern.get('session')
+        service = pattern.get('service')
         permission = pattern.get('permission')
         as_user = permission.get('as_user')
         update_session = session.copy()
         update_session.set('active', False)
+
         changes: StateChangeSequence = [(session, "update", update_session)]
         busybox_session = Entity(
             'Session',
@@ -83,9 +91,10 @@ class BusyBoxGTFO(Action):
             protocol='busybox',
             username=as_user,
             active=True,
-            executes_on=session.get('executes_on'),
             id=session.get('id'),
         )
-        merge_pattern = update_session.with_edge(Relationship('spawned', direction='r')).with_node(busybox_session)
-        changes.append((update_session, "merge", merge_pattern))
+
+        busybox_session_with_service = busybox_session.with_edge(Relationship('executes_on')).with_node(service)
+        merge_pattern = update_session.with_edge(Relationship('spawned')).with_node(busybox_session_with_service)
+        changes.append((service, "merge", merge_pattern))
         return changes

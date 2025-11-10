@@ -37,8 +37,12 @@ class ObtainShellOnExistingSession(Action):
         session = Entity(type='Session', alias='session', active=True)
         # res = kg.match(session).where("""session.listed_sudo_permissions IS NULL""")
         # ret = [p for p in res if p.get('session').get('protocol') in ['msf']]
+
+        service = Entity(type='Service', alias='service')
+        match_pattern = session.with_edge(Relationship('executes_on', direction='r')).with_node(service)
+
         query = Query()
-        query.match(session)
+        query.match(match_pattern)
         query.where(session.listed_sudo_permissions.is_null())
         query.where(session.protocol.is_in(['msf']))
         query.ret_all()
@@ -61,6 +65,8 @@ class ObtainShellOnExistingSession(Action):
         Update knowledge graph to reflect the new shell session.
         """
         session = pattern.get('session')
+        service = pattern.get('service')
+
         update_session = session.copy()
         update_session.set('active', False)
         changes: StateChangeSequence = [(session, "update", update_session)]
@@ -69,9 +75,10 @@ class ObtainShellOnExistingSession(Action):
             alias='shell_session',
             protocol='shell',
             active=True,
-            executes_on=session.get('executes_on'),
             id=session.get('id'),
         )
-        merge_pattern = update_session.with_edge(Relationship('spawned', direction='r')).with_node(shell_session)
-        changes.append((update_session, "merge", merge_pattern))
+
+        shell_session_with_service = shell_session.with_edge(Relationship('executes_on')).with_node(service)
+        merge_pattern = update_session.with_edge(Relationship('spawned')).with_node(shell_session_with_service)
+        changes.append((service, "merge", merge_pattern))
         return changes

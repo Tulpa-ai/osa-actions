@@ -36,13 +36,18 @@ class MakeGTFO(Action):
         command as root.
         """
         session = Entity('Session', alias='session')
+        service = Entity(type='Service', alias='service')        
         user = Entity(type='User', alias='user')
-        pattern = (
+
+        permission_pattern = (
             user
             .with_edge(Relationship(type='has'))
             .with_node(Entity(type='Permission', alias='permission', command='/usr/bin/make'))
-            .combine(session)
         )
+        session_pattern = session.with_edge(Relationship('executes_on')).with_node(service)
+        user_service_pattern = user.with_edge(Relationship('is_client')).with_node(service)
+        pattern = permission_pattern.combine(user_service_pattern).combine(session_pattern)
+
         query = Query()
         query.match(pattern)
         query.where(user.username == session.username)
@@ -75,6 +80,8 @@ class MakeGTFO(Action):
         Update knowledge graph to reflect change in session.
         """
         session = pattern.get('session')
+        service = pattern.get('service')
+
         update_session = session.copy()
         update_session.set('active', False)
         changes: StateChangeSequence = [(session, "update", update_session)]
@@ -84,9 +91,10 @@ class MakeGTFO(Action):
             protocol='root',
             username='root',
             active=True,
-            executes_on=session.get('executes_on'),
             id=session.get('id'),
         )
-        merge_pattern = update_session.with_edge(Relationship('spawned', direction='r')).with_node(root_session)
-        changes.append((update_session, "merge", merge_pattern))
+        root_session_with_service = root_session.with_edge(Relationship('executes_on')).with_node(service)
+        merge_pattern = update_session.with_edge(Relationship('spawned')).with_node(root_session_with_service)
+        changes.append((service, "merge", merge_pattern))
+
         return changes
