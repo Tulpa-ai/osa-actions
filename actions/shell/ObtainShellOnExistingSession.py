@@ -1,7 +1,7 @@
 from typing import Union
 
 from action_state_interface.action import Action, StateChangeSequence
-from action_state_interface.exec import ActionExecutionResult
+from action_state_interface.exec import ActionExecutionResult, ActionExecutionError
 from artefacts.ArtefactManager import ArtefactManager
 from kg_api import Entity, GraphDB, MultiPattern, Pattern, Relationship
 from kg_api.query import Query
@@ -27,24 +27,33 @@ class ObtainShellOnExistingSession(Action):
         """
         Return expected outcome of action.
         """
-        session = pattern.get('session')._id
-        return [f"Use {session} to spawn a shell process on the target machine."]
+        session = pattern.get('session')
+        service = pattern.get('service')
+        port = pattern.get('port')
+        asset = pattern.get('asset')
+        return [f"Use session (id={session._id}) to spawn a shell process on the {service.get('protocol')} service exposed on {port.get('number')} on {asset.get('ip_address')}"]
 
     def get_target_query(self) -> Query:
         """
         get_target_patterns check to find a valid session
         """
-        session = Entity(type='Session', alias='session', active=True)
-        # res = kg.match(session).where("""session.listed_sudo_permissions IS NULL""")
-        # ret = [p for p in res if p.get('session').get('protocol') in ['msf']]
+        
+        asset = Entity('Asset', alias='asset')
+        port = Entity('OpenPort', alias='port')
+        service = Entity('Service', alias='service')
+        session = Entity(type='Session', alias='session', protocol='msf', active=True)
 
-        service = Entity(type='Service', alias='service')
-        match_pattern = session.with_edge(Relationship('executes_on', direction='r')).with_node(service)
+        pattern = (
+            asset.with_edge(Relationship('has'))
+            .with_node(port)
+            .with_edge(Relationship('is_running'))
+            .with_node(service)
+            .with_edge(Relationship('executes_on', direction='l'))
+            .with_node(session)
+        )
 
         query = Query()
-        query.match(match_pattern)
-        query.where(session.listed_sudo_permissions.is_null())
-        query.where(session.protocol.is_in(['msf']))
+        query.match(pattern)
         query.ret_all()
         return query
 
