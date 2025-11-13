@@ -41,7 +41,7 @@ class ObtainShellOnExistingSession(Action):
         asset = Entity('Asset', alias='asset')
         port = Entity('OpenPort', alias='port')
         service = Entity('Service', alias='service')
-        session = Entity(type='Session', alias='session', active=True)
+        session = Entity(type='Session', alias='session', protocol='msf', active=True)
 
         pattern = (
             asset.with_edge(Relationship('has'))
@@ -54,8 +54,6 @@ class ObtainShellOnExistingSession(Action):
 
         query = Query()
         query.match(pattern)
-        query.where(session.listed_sudo_permissions.is_null())
-        query.where(session.protocol.is_in(['msf']))
         query.ret_all()
         return query
 
