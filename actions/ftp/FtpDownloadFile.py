@@ -37,6 +37,7 @@ class FtpDownloadFile(Action):
         asset = Entity('Asset', alias='asset')
         service = Entity('Service', alias='service', protocol='ftp')
         drive = Entity('Drive', alias='drive')
+        session_service_pattern = session.with_edge(Relationship('executes_on', direction='r')).with_node(service)
         service_pattern = (
             asset.with_edge(Relationship('has'))
             .with_node(Entity('OpenPort', alias='openport'))
@@ -47,10 +48,10 @@ class FtpDownloadFile(Action):
         # Placeholder for a more intelligent approach to file download selection
         file_pattern = drive.directed_path_to(Entity('File', alias='file', filename='id_rsa'))
         file_pattern.set_alias('path')
-        match_pattern = service_pattern.combine(file_pattern).combine(session)
+
+        match_pattern = service_pattern.combine(file_pattern).combine(session_service_pattern)  
         query = Query()
         query.match(match_pattern)
-        query.where(service.id() == session.executes_on)
         query.ret_all()
         return query
 

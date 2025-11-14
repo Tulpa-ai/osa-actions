@@ -27,7 +27,7 @@ class FastNmapScan(Action):
         self.noise = 0.8
         self.impact = 0
         self.input_motif = self.build_input_motif()
-        self.output_motif = self.build_output_motif_templates()
+        self.output_motif = self.build_output_motif()
 
     @classmethod
     def build_input_motif(cls) -> ActionInputMotif:
@@ -51,7 +51,7 @@ class FastNmapScan(Action):
         return input_motif
 
     @classmethod
-    def build_output_motif_templates(cls) -> ActionOutputMotif:
+    def build_output_motif(cls) -> ActionOutputMotif:
         """
         Build the output motif templates for FastNmapScan.
 
@@ -128,7 +128,7 @@ class FastNmapScan(Action):
         )
         return res
 
-    def parse_nmap_output(self, output: ActionExecutionResult) -> dict[str, list[str]]:
+    def parse_output(self, output: ActionExecutionResult) -> dict[str, list[str]]:
         """
         Parse NMAP output to extract discovered IP addresses and their open ports.
         
@@ -156,7 +156,7 @@ class FastNmapScan(Action):
 
         return dict(results)
 
-    def populate_templates(
+    def populate_output_motif(
         self, gdb: GraphDB, pattern: Pattern, discovered_data: dict[str, list[str]]
     ) -> StateChangeSequence:
         """
@@ -207,6 +207,6 @@ class FastNmapScan(Action):
         - Parse the NMAP output to extract discovered data
         - Create state changes from the parsed data
         """
-        discovered_data = self.parse_nmap_output(output)
-        changes = self.populate_templates(gdb, pattern, discovered_data)
+        discovered_data = self.parse_output(output)
+        changes = self.populate_output_motif(gdb, pattern, discovered_data)
         return changes

@@ -53,5 +53,6 @@ class FTPLoginWithCredentials(Action):
         self, kg: GraphDB, artefacts, pattern: Pattern, output: ActionExecutionResult
     ) -> StateChangeSequence:
         service = pattern.get('service')
-        session = Entity('Session', alias='session', protocol='ftp', id=output.session, executes_on=service._id)
-        return [(None, "merge", session)]
+        session = Entity('Session', alias='session', protocol='ftp', id=output.session)
+        session_service_pattern = session.with_edge(Relationship('executes_on', direction='r')).with_node(service)
+        return [(service, "merge", session_service_pattern)]

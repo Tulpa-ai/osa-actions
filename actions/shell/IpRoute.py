@@ -40,12 +40,13 @@ class IpRoute(Action):
 
         asset = Entity('Asset', alias='asset')
         service = Entity('Service', alias='service')
+        session_service_pattern = session.with_edge(Relationship('executes_on', direction='r')).with_node(service)
         match_pattern = (
             asset.with_edge(Relationship('has'))
             .with_node(Entity('OpenPort', alias='openport'))
             .with_edge(Relationship('is_running'))
             .with_node(service)
-            .combine(session)
+            .combine(session_service_pattern)
         )
 
         # res = kg.match(match_pattern).where(
@@ -53,7 +54,7 @@ class IpRoute(Action):
         # )
         query = Query()
         query.match(match_pattern)
-        query.where(service.id() == session.executes_on)
+
         query.where_not(session.protocol.is_in(['rsh', 'ftp', 'msf']))
         query.ret_all()
         return query

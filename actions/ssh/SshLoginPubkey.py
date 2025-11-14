@@ -133,10 +133,10 @@ class SshLoginPubkey(Action):
             username=username,
             active=True,
             id=output.session,
-            executes_on=service._id,
         )
 
+        session_service_pattern = session.with_edge(Relationship('executes_on', direction='r')).with_node(service)
         changes: StateChangeSequence = []
-        changes.append((None, "merge", session))
+        changes.append((service, "merge", session_service_pattern))
         changes.append((match_pattern, 'merge_if_not_match', creds_pattern))
         return changes
