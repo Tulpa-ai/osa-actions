@@ -9,6 +9,7 @@ from action_state_interface.exec import ActionExecutionResult
 from artefacts.ArtefactManager import ArtefactManager
 from kg_api import Entity, GraphDB, MultiPattern, Pattern, Relationship
 from kg_api.query import Query
+from kg_api.utils import safe_add_user
 from Session import SessionManager
 
 
@@ -103,11 +104,15 @@ class DiscoverSSHAuthMethods(Action):
         ssh_pattern = pattern._patterns[0]
         ssh_service = ssh_pattern.get('ssh_service')
         user = pattern.get('user')
+        asset = pattern.get('asset')
         if 'noneauth' in clean:
             user.set('ssh_authentication', False)
         else:
             user.set('ssh_authentication', True)
-        merge_pattern = ssh_service.with_edge(Relationship('is_client', direction='l')).with_node(user)
 
-        changes: StateChangeSequence = [(pattern, "update", user), (ssh_pattern, "merge", merge_pattern)]
+        changes: StateChangeSequence = [
+            (pattern, "update", user),
+        ]
+        changes.extend(safe_add_user(asset, ssh_service, user))
+
         return changes
