@@ -112,7 +112,7 @@ class DiscoverSSHAuthMethods(Action):
 
         changes: StateChangeSequence = [
             (pattern, "update", user),
+            (pattern, "merge_if_not_match", ssh_service - Relationship('is_client', direction='l') - user)
         ]
-        changes.extend(safe_add_user(asset, ssh_service, user))
 
         return changes
