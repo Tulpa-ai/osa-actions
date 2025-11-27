@@ -7,6 +7,7 @@ from artefacts.ArtefactManager import ArtefactManager
 from kg_api import Entity, GraphDB, MultiPattern, Pattern, Relationship
 from kg_api.query import Query
 from Session import SessionManager
+from motifs import ActionInputMotif, ActionOutputMotif, StateChangeOperation
 
 
 class BusyBoxGTFO(Action):
@@ -15,86 +16,215 @@ class BusyBoxGTFO(Action):
     """
 
     def __init__(self):
-        super().__init__(
-            "BusyBoxGTFO", "T1548", "TA0004", ["quiet", "fast"]
-        )
+        super().__init__("BusyBoxGTFO", "T1548", "TA0004", ["quiet", "fast"])
         self.noise = 0.5
         self.impact = 0.6
+        self.input_motif = self.build_input_motif()
+        self.output_motif = self.build_output_motif()
+
+    @classmethod
+    def build_input_motif(cls) -> ActionInputMotif:
+        """
+        Build the input motif for BusyBoxGTFO.
+        """
+        input_motif = ActionInputMotif(
+            name="InputMotif_BusyBoxGTFO", description="Input motif for BusyBoxGTFO"
+        )
+
+        input_motif.add_template(
+            template_name="existing_service",
+            entity=Entity("Service", alias="service"),
+        )
+
+        input_motif.add_template(
+            template_name="existing_session",
+            entity=Entity("Session", alias="session"),
+            relationship_type="executes_on",
+            match_on="existing_service",
+        )
+
+        input_motif.add_template(
+            template_name="existing_user",
+            entity=Entity("User", alias="user"),
+            relationship_type="is_client",
+            match_on="existing_service",
+        )
+
+        input_motif.add_template(
+            template_name="existing_permission",
+            entity=Entity("Permission", alias="permission", command="/usr/bin/busybox"),
+            relationship_type="has",
+            match_on="existing_user",
+            invert_relationship=True,
+        )
+        return input_motif
+
+    @classmethod
+    def build_output_motif(cls) -> ActionOutputMotif:
+        """
+        Build the output motif for BusyBoxGTFO.
+        """
+        output_motif = ActionOutputMotif(
+            name="OutputMotif_BusyBoxGTFO", description="Output motif for BusyBoxGTFO"
+        )
+
+        output_motif.add_template(
+            template_name="updated_session",
+            entity=Entity("Session", alias="session"),
+            operation=StateChangeOperation.UPDATE,
+            expected_attributes=["active"],
+        )
+
+        output_motif.add_template(
+            template_name="discovered_session",
+            entity=Entity(
+                "Session", alias="busybox_session", protocol="busybox", active=True
+            ),
+            relationship_type="executes_on",
+            match_on=Entity("Service", alias="service"),
+        )
+
+        return output_motif
 
     def expected_outcome(self, pattern: Pattern) -> list[str]:
         """
         Return expected outcome of action.
         """
-        user = pattern.get('user').get('username')
-        session = pattern.get('session')._id
-        permission = pattern.get('permission')._id
-        return [f"Change user to {user} in session ({session}) with permission ({permission})"]
+        user = pattern.get("user").get("username")
+        session = pattern.get("session")._id
+        permission = pattern.get("permission")._id
+        return [
+            f"Change user to {user} in session ({session}) with permission ({permission})"
+        ]
 
     def get_target_query(self) -> Query:
         """
         get_target_patterns check to identify a user with permission to run the busybox
-        command.
+        command as root.
         """
-        session = Entity('Session', alias='session')
-
-        service = Entity(type='Service', alias='service')
-        user = Entity(type='User', alias='user')
-
-        session_pattern = session.with_edge(Relationship('executes_on', direction='r')).with_node(service)
-        permission_pattern = (
-            user
-            .with_edge(Relationship(type='has'))
-            .with_node(Entity(type='Permission', alias='permission', command='/usr/bin/busybox'))
+        query = self.input_motif.get_query()
+        query.where(
+            self.input_motif.get_template("existing_user").entity.username
+            == self.input_motif.get_template("existing_session").entity.username
         )
-        user_service_pattern = user.with_edge(Relationship('is_client')).with_node(service)
-        pattern = permission_pattern.combine(user_service_pattern).combine(session_pattern)
-
-        query = Query()
-        query.match(pattern)
-        query.where(user.username == session.username)
-        query.where(session.active == True)
-        query.where_not(session.protocol == "busybox")
+        query.where(
+            self.input_motif.get_template("existing_session").entity.active == True
+        )
+        query.where_not(
+            self.input_motif.get_template("existing_session").entity.protocol
+            == "busybox"
+        )
         query.ret_all()
         return query
 
-    def function(self, sessions: SessionManager, artefacts: ArtefactManager, pattern: Pattern) -> ActionExecutionResult:
+    def function(
+        self, sessions: SessionManager, artefacts: ArtefactManager, pattern: Pattern
+    ) -> ActionExecutionResult:
         """
         Establish busybox session as another user.
         """
-        tulpa_session = pattern.get('session')
-        tulpa_session_id = tulpa_session.get('id')
-        permission = pattern.get('permission')
-        as_user = permission.get('as_user')
+        tulpa_session = pattern.get("session")
+        tulpa_session_id = tulpa_session.get("id")
+        permission = pattern.get("permission")
+        as_user = permission.get("as_user")
 
         live_session = sessions.get_session(tulpa_session_id)
         cmd = f"sudo -u {as_user} busybox sh"
         output = live_session.run_command(cmd)
-        return ActionExecutionResult(command=[cmd], session=tulpa_session_id, stdout=output)
-
-    def capture_state_change(
-        self, kg: GraphDB, artefacts: ArtefactManager, pattern: Pattern, output: ActionExecutionResult
-    ) -> StateChangeSequence:
-        """
-        Update session object to reflect a change in protocol.
-        """
-        session = pattern.get('session')
-        service = pattern.get('service')
-        permission = pattern.get('permission')
-        as_user = permission.get('as_user')
-        update_session = session.copy()
-        update_session.set('active', False)
-
-        changes: StateChangeSequence = [(session, "update", update_session)]
-        busybox_session = Entity(
-            'Session',
-            alias='busybox_session',
-            protocol='busybox',
-            username=as_user,
-            active=True,
-            id=session.get('id'),
+        return ActionExecutionResult(
+            command=[cmd], session=tulpa_session_id, stdout=output
         )
 
-        busybox_session_with_service = busybox_session.with_edge(Relationship('executes_on')).with_node(service)
-        merge_pattern = update_session.with_edge(Relationship('spawned')).with_node(busybox_session_with_service)
-        changes.append((service, "merge", merge_pattern))
+    def parse_output(
+        self, output: ActionExecutionResult, artefacts: ArtefactManager
+    ) -> dict:
+        """
+        Parse the output of the BusyBoxGTFO action.
+        """
+        return {
+            "old_session_active": False,
+            "busybox_session_active": True,
+        }
+
+    def populate_output_motif(
+        self, kg: GraphDB, pattern: Pattern, discovered_data: dict
+    ) -> StateChangeSequence:
+        """
+        Populate the output motif for BusyBoxGTFO.
+
+        This method:
+        1. Updates the old session to set active=False
+        2. Creates a new busybox session linked to both:
+           - The service via executes_on relationship (busybox_session -[executes_on]-> service)
+           - The old session via spawned relationship (old_session -[spawned]-> busybox_session)
+
+        The final pattern should be: old_session -[spawned]-> busybox_session -[executes_on]-> service
+        """
+        self.output_motif.reset_context()
+        changes: StateChangeSequence = []
+
+        old_session = pattern.get("session")
+        service = pattern.get("service")
+        permission = pattern.get("permission")
+        as_user = permission.get("as_user")
+
+        updated_session_change = self.output_motif.instantiate(
+            template_name="updated_session",
+            match_on_override=old_session,
+            active=discovered_data["old_session_active"],
+        )
+        changes.append(updated_session_change)
+
+        # Get the updated session entity from the pattern
+        updated_session_pattern = updated_session_change[-1]
+        if isinstance(updated_session_pattern, Pattern):
+            updated_session_entity = updated_session_pattern.get("session")
+        else:
+            updated_session_entity = updated_session_pattern
+
+        # Build match pattern for the busybox session that includes full context
+        # This matches the structure from the commented code: pattern[0] & update_session - Relationship('executes_on') - service & pattern[2] & pattern[3]
+        if isinstance(pattern, MultiPattern):
+            match_pattern = (
+                pattern[0]
+                & updated_session_entity - Relationship("executes_on") - service
+                & pattern[2]
+                & pattern[3]
+            )
+        else:
+            # If pattern is not a MultiPattern, create one with the necessary components
+            match_pattern = (
+                pattern.get("service")
+                & updated_session_entity - Relationship("executes_on") - service
+                & pattern.get("user")
+                & pattern.get("permission")
+            )
+
+        busybox_session = self.output_motif.instantiate(
+            template_name="discovered_session",
+            match_on_override=service,
+            full_pattern_override=match_pattern,
+            additional_relationships=[
+                (
+                    "spawned",
+                    updated_session_entity,
+                    True,
+                ),  # old_session -[spawned]-> busybox_session
+            ],
+            username=as_user,
+            active=discovered_data["busybox_session_active"],
+        )
+        changes.append(busybox_session)
+
+        return changes
+
+    def capture_state_change(
+        self,
+        kg: GraphDB,
+        artefacts: ArtefactManager,
+        pattern: Pattern,
+        output: ActionExecutionResult,
+    ) -> StateChangeSequence:
+        discovered_data = self.parse_output(output, artefacts)
+        changes = self.populate_output_motif(kg, pattern, discovered_data)
         return changes
