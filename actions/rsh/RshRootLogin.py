@@ -1,12 +1,13 @@
 from typing import Any, Union
 
-from action_state_interface.action import Action
+from action_state_interface.action import Action, StateChangeSequence
 from action_state_interface.action_utils import shell
 from action_state_interface.exec import ActionExecutionError, ActionExecutionResult
 from artefacts.ArtefactManager import ArtefactManager
 from kg_api import Entity, GraphDB, MultiPattern, Pattern, Relationship
 from kg_api.query import Query
 from Session import SessionManager
+from motifs import ActionInputMotif, ActionOutputMotif
 
 
 class RshRootLogin(Action):
@@ -18,6 +19,54 @@ class RshRootLogin(Action):
         super().__init__("RshRootLogin", "T1068", "TA0004", ["loud", "fast"])
         self.noise = 0.8
         self.impact = 0.8
+        self.input_motif = self.build_input_motif()
+        self.output_motif = self.build_output_motif()
+
+    @classmethod
+    def build_input_motif(cls) -> ActionInputMotif:
+        """
+        Build the input motif for RshRootLogin.
+        """
+        input_motif = ActionInputMotif(
+            name="InputMotif_RshRootLogin",
+            description="Input motif for RshRootLogin"
+        )
+
+        input_motif.add_template(
+            template_name="existing_asset",
+            entity=Entity('Asset', alias='asset'),
+        )
+        
+        input_motif.add_template(
+            template_name="existing_port",
+            entity=Entity('OpenPort', alias='port'),
+            match_on="existing_asset",
+            relationship_type="has",
+            invert_relationship=True,
+        )
+                
+        return input_motif
+
+
+    @classmethod
+    def build_output_motif(cls) -> ActionOutputMotif:
+        """
+        Build the output motif for RshRootLogin.
+        """
+        output_motif = ActionOutputMotif(
+            name="OutputMotif_RshRootLogin",
+            description="Output motif for RshRootLogin"
+        )
+        
+        output_motif.add_template(
+            template_name="discovered_session",
+            entity=Entity('Session', alias='session', protocol='rsh'),
+            relationship_type="executes_on",
+            match_on=Entity('OpenPort', alias='port'),
+            expected_attributes=["id"],
+        )
+
+        return output_motif
 
     def expected_outcome(self, pattern: Pattern) -> list[str]:
         """
@@ -29,12 +78,8 @@ class RshRootLogin(Action):
         """
         get_target_patterns check to identify rsh ports.
         """
-        asset = Entity('Asset', alias='asset')
-        port = Entity('OpenPort', alias='port')
-        pattern = asset.with_edge(Relationship('has', direction='r')).with_node(port)
-        query = Query()
-        query.match(pattern)
-        query.where(port.number.is_in([512, 513, 514]))
+        query = self.input_motif.get_query()
+        query.where(self.input_motif.get_template('existing_port').entity.number.is_in([512, 513, 514]))
         query.ret_all()
         query.limit(1)
         return query
@@ -57,15 +102,34 @@ class RshRootLogin(Action):
             result.session = sess_id
             return result
 
+    def parse_output(self, output: ActionExecutionResult) -> dict:
+        """
+        Parse the output of the RshRootLogin action.
+        """
+        return {
+            "session": output.session,
+        }
+
+    def populate_output_motif(self, kg: GraphDB, pattern: Pattern, discovered_data: dict) -> StateChangeSequence:
+        """
+        Populate the output motif for RshRootLogin.
+        """
+        self.output_motif.reset_context()
+        changes: StateChangeSequence = []
+
+        session_change = self.output_motif.instantiate(
+            template_name="discovered_session",
+            match_on_override=pattern.get('port'),
+            id=discovered_data["session"],
+        )
+        changes.append(session_change)
+        return changes
+
     def capture_state_change(self, kg: GraphDB, artefacts: ArtefactManager, pattern: Pattern, output: Any):
         """
         Add the rsh session to the knowledge graph.
         rsh session is attached to the port.
         """
-        legacy_port = pattern.get('port')
-        if not legacy_port:
-            raise ActionExecutionError
-
-        session = Entity('Session', alias='session', protocol='rsh', id=output.session)
-        session_port_pattern = session.with_edge(Relationship('executes_on', direction='r')).with_node(legacy_port)
-        return [(legacy_port, "merge", session_port_pattern)]
+        discovered_data = self.parse_output(output)
+        changes = self.populate_output_motif(kg, pattern, discovered_data)
+        return changes
