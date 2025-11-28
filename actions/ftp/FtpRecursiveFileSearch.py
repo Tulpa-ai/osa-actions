@@ -1,4 +1,6 @@
+from dis import disco
 import os
+import re
 from typing import Union
 from ftplib import FTP, error_perm
 from fuzzywuzzy import fuzz
@@ -6,8 +8,16 @@ from action_state_interface.action import Action, StateChangeSequence
 from kg_api import Entity, GraphDB, MultiPattern, Pattern, Relationship
 from kg_api.query import Query
 from Session import SessionManager
+from motifs import ActionInputMotif, ActionOutputMotif, StateChangeOperation
 
 FILES_AND_DIRS_TO_IGNORE = ['.', '..']
+
+def sanitize_alias(name: str) -> str:
+    """
+    Sanitize a name to be used as a Cypher identifier alias.
+    Replaces invalid characters (dots, hyphens, spaces, etc.) with underscores.
+    """
+    return re.sub(r'[^a-zA-Z0-9_]', '_', name)
 
 def list_files_recursive(ftp, path='/', depth=1, max_depth=2, file_list=None) -> list[str]:
     # ...existing code...
@@ -58,6 +68,74 @@ class FtpRecursiveFileSearch(Action):
         )
         self.noise = 0.2
         self.impact = 0.8
+        self.input_motif = self.build_input_motif()
+        self.output_motif = self.build_output_motif()
+
+    @classmethod
+    def build_input_motif(cls) -> ActionInputMotif:
+        input_motif = ActionInputMotif(
+            name="InputMotif_FtpRecursiveFileSearch",
+            description="Input motif for FtpRecursiveFileSearch"
+        )
+        input_motif.add_template(
+            template_name="existing_asset",
+            entity=Entity('Asset', alias='asset'),
+        )
+        input_motif.add_template(
+            template_name="existing_port",
+            entity=Entity('OpenPort', alias='port'),
+            relationship_type="has",
+            match_on="existing_asset",
+            invert_relationship=True,
+        )
+        input_motif.add_template(
+            template_name="existing_service",
+            entity=Entity('Service', alias='service', protocol='ftp'),
+            relationship_type="is_running",
+            match_on="existing_port",
+            invert_relationship=True,
+        )
+        input_motif.add_template(
+            template_name="existing_session",
+            entity=Entity('Session', alias='session', protocol='ftp'),
+            relationship_type="executes_on",
+            match_on="existing_service",
+        )
+        return input_motif
+
+    @classmethod
+    def build_output_motif(cls) -> ActionOutputMotif:
+        output_motif = ActionOutputMotif(
+            name="OutputMotif_FtpRecursiveFileSearch",
+            description="Output motif for FtpRecursiveFileSearch"
+        )
+
+        output_motif.add_template(
+            template_name="discovered_drive",
+            entity=Entity('Drive', alias='drive'),
+            relationship_type="accesses",
+            match_on=Entity('Service', alias='service', protocol='ftp'),
+            invert_relationship=True,
+            expected_attributes=["location"],
+        )
+
+        output_motif.add_template(
+            template_name="discovered_directory",
+            entity=Entity('Directory', alias='directory'),
+            relationship_type="has",
+            match_on="discovered_drive",
+            invert_relationship=True,
+        )
+
+        output_motif.add_template(
+            template_name="discovered_file",
+            entity=Entity('File', alias='file'),
+            relationship_type="has",
+            match_on="discovered_directory",
+            invert_relationship=True,
+        )
+
+        return output_motif
 
     def expected_outcome(self, pattern: Pattern) -> list[str]:
         ip = pattern.get('asset').get('ip_address')
@@ -65,21 +143,8 @@ class FtpRecursiveFileSearch(Action):
         return [f"Search for interesting files on FTP service ({service}) on {ip}"]
 
     def get_target_query(self) -> Query:
-        session = Entity('Session', alias='session', protocol='ftp')
-        asset = Entity('Asset', alias='asset')
-        service = Entity('Service', alias='service', protocol='ftp')
-        session_service_pattern = session.with_edge(Relationship('executes_on', direction='r')).with_node(service)
-
-        match_pattern = (
-            asset.with_edge(Relationship('has'))
-            .with_node(Entity('OpenPort', alias='openport'))
-            .with_edge(Relationship('is_running'))
-            .with_node(service)
-            .combine(session_service_pattern)
-        )
-        negate_pattern = service.directed_path_to(Entity('File'))
-        query = Query()
-        query.match(match_pattern)
+        query = self.input_motif.get_query()
+        negate_pattern = self.input_motif.get_template('existing_service').entity.directed_path_to(Entity('File'))
         query.where(negate_pattern, _not=True)
         query.ret_all()
         return query
@@ -105,38 +170,74 @@ class FtpRecursiveFileSearch(Action):
                 f.write(file.encode("utf-8") + b'\n')
         return interesting_files
 
+    def parse_output(self, output: str) -> dict:
+        if len(output) == 0:
+            return {}
+        discovered_files = []
+        for filename in output:
+            path_list = [f for f in filename.split('/') if len(f) > 0]
+            file_name = path_list.pop()
+            
+            directory_list = []
+            for index, path in enumerate(path_list):
+                directory_list.append({
+                    'dirname': path,
+                    'index': index
+                })
+
+            discovered_files.append({
+                'filename': file_name,
+                'path': path_list,
+                'directory_list': directory_list,
+            })
+
+        return discovered_files
+
+    def populate_output_motif(self, kg: GraphDB, pattern: Pattern, discovered_data: dict) -> StateChangeSequence:
+        self.output_motif.reset_context()
+        changes: StateChangeSequence = []
+
+        drive_change = self.output_motif.instantiate(
+            template_name="discovered_drive",
+            match_on_override=pattern.get('service'),
+            location=f"FTP://{pattern.get('asset').get('ip_address')}/"
+        )
+        changes.append(drive_change)
+        drive_pattern = drive_change[2][-1]
+        all_aliases = set()
+        for file_dict in discovered_data:
+            full_alias = 'drive'
+            all_aliases.add(full_alias)
+            current_directory_pattern = drive_pattern
+            for directory_dict in file_dict['directory_list']:
+                # index = directory_dict['index']
+                dirname = directory_dict['dirname']
+                
+                sanitized_dirname = sanitize_alias(dirname)
+                full_alias += f'_{sanitized_dirname}'
+                directory_change = self.output_motif.instantiate(
+                    template_name="discovered_directory",
+                    alias=full_alias,
+                    match_on_override=current_directory_pattern,
+                    dirname=dirname,
+                )
+                if full_alias not in all_aliases:
+                    all_aliases.add(full_alias)
+                    changes.append(directory_change)
+
+                current_directory_pattern = directory_change[2][-1]
+            
+            file_change = self.output_motif.instantiate(
+                template_name="discovered_file",
+                match_on_override=current_directory_pattern,
+                filename=file_dict['filename'],
+            )
+            changes.append(file_change)
+        return changes
+
     def capture_state_change(
         self, kg: GraphDB, artefacts, pattern: Pattern, output
     ) -> StateChangeSequence:
-        changes: StateChangeSequence = []
-        if len(output) == 0:
-            return changes
-        asset = pattern.get('asset')
-        ftp_service = pattern.get('service')
-        ip_address = asset.get('ip_address')
-        ftp_match_pattern = (
-            asset.with_edge(Relationship('has'))
-            .with_node(Entity('OpenPort'))
-            .with_edge(Relationship('is_running'))
-            .with_node(ftp_service)
-        )
-        drive = Entity('Drive', alias='drive', location=f'FTP://{ip_address}/')
-        service_drive_pattern = ftp_service.with_edge(Relationship('accesses', direction='r')).with_node(drive)
-        changes.append((ftp_match_pattern, 'merge_if_not_match', service_drive_pattern))
-        ftp_drive_pattern = ftp_match_pattern.with_edge(Relationship('accesses', direction='r')).with_node(drive)
-        for filename in output:
-            path_list = [f for f in filename.split('/') if len(f) > 0]
-            filename = path_list.pop()
-            match_pattern = ftp_drive_pattern
-            merge_pattern = drive
-            for index, path in enumerate(path_list):
-                directory = Entity('Directory', alias=f'directory{index}', dirname=path)
-                merge_pattern = merge_pattern.with_edge(Relationship('has', direction='r')).with_node(directory)
-                changes.append((match_pattern, "merge_if_not_match", merge_pattern))
-                match_pattern = match_pattern.with_edge(Relationship('has', direction='r')).with_node(directory)
-                merge_pattern = directory
-            merge_pattern = merge_pattern.with_edge(Relationship('has', direction='r')).with_node(
-                Entity(type='File', filename=filename)
-            )
-            changes.append((match_pattern, "merge_if_not_match", merge_pattern))
+        discovered_data = self.parse_output(output)
+        changes = self.populate_output_motif(kg, pattern, discovered_data)
         return changes
