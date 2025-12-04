@@ -100,7 +100,7 @@ class BusyBoxGTFO(Action):
     def get_target_query(self) -> Query:
         """
         get_target_patterns check to identify a user with permission to run the busybox
-        command as root.
+        command as another user.
         """
         query = self.input_motif.get_query()
         query.where(

@@ -1,4 +1,3 @@
-from dis import disco
 import os
 import re
 from typing import Union
@@ -8,7 +7,7 @@ from action_state_interface.action import Action, StateChangeSequence
 from kg_api import Entity, GraphDB, MultiPattern, Pattern, Relationship
 from kg_api.query import Query
 from Session import SessionManager
-from motifs import ActionInputMotif, ActionOutputMotif, StateChangeOperation
+from motifs import ActionInputMotif, ActionOutputMotif
 
 FILES_AND_DIRS_TO_IGNORE = ['.', '..']
 
@@ -73,6 +72,9 @@ class FtpRecursiveFileSearch(Action):
 
     @classmethod
     def build_input_motif(cls) -> ActionInputMotif:
+        """
+        Build the input motif for FtpRecursiveFileSearch.
+        """
         input_motif = ActionInputMotif(
             name="InputMotif_FtpRecursiveFileSearch",
             description="Input motif for FtpRecursiveFileSearch"
@@ -105,6 +107,9 @@ class FtpRecursiveFileSearch(Action):
 
     @classmethod
     def build_output_motif(cls) -> ActionOutputMotif:
+        """
+        Build the output motif for FtpRecursiveFileSearch.
+        """
         output_motif = ActionOutputMotif(
             name="OutputMotif_FtpRecursiveFileSearch",
             description="Output motif for FtpRecursiveFileSearch"
@@ -138,6 +143,9 @@ class FtpRecursiveFileSearch(Action):
         return output_motif
 
     def expected_outcome(self, pattern: Pattern) -> list[str]:
+        """
+        Expected outcome for FtpRecursiveFileSearch.
+        """
         ip = pattern.get('asset').get('ip_address')
         service = pattern.get('service')._id
         return [f"Search for interesting files on FTP service ({service}) on {ip}"]
@@ -173,6 +181,7 @@ class FtpRecursiveFileSearch(Action):
     def parse_output(self, output: str) -> dict:
         if len(output) == 0:
             return {}
+
         discovered_files = []
         for filename in output:
             path_list = [f for f in filename.split('/') if len(f) > 0]
@@ -210,7 +219,6 @@ class FtpRecursiveFileSearch(Action):
             all_aliases.add(full_alias)
             current_directory_pattern = drive_pattern
             for directory_dict in file_dict['directory_list']:
-                # index = directory_dict['index']
                 dirname = directory_dict['dirname']
                 
                 sanitized_dirname = sanitize_alias(dirname)
