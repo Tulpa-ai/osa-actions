@@ -7,6 +7,7 @@ from artefacts.ArtefactManager import ArtefactManager
 from kg_api import Entity, GraphDB, MultiPattern, Pattern, Relationship
 from kg_api.query import Query
 from Session import SessionManager
+from motifs import ActionInputMotif, ActionOutputMotif, StateChangeOperation
 
 
 class PasswordlessSudoCheck(Action):
@@ -20,6 +21,51 @@ class PasswordlessSudoCheck(Action):
         )
         self.noise = 0.5
         self.impact = 0.0
+        self.input_motif = self.build_input_motif()
+        self.output_motif = self.build_output_motif()
+
+    @classmethod
+    def build_input_motif(cls) -> ActionInputMotif:
+        """
+        Build the input motif for PasswordlessSudoCheck.
+        """
+        input_motif = ActionInputMotif(
+            name="InputMotif_PasswordlessSudoCheck",
+            description="Input motif for PasswordlessSudoCheck"
+        )
+        input_motif.add_template(
+            entity=Entity('Session', alias='session', active=True),
+            template_name="existing_session",
+            null_attributes=["listed_sudo_permissions"],
+        )
+        return input_motif
+
+    @classmethod
+    def build_output_motif(cls) -> ActionOutputMotif:
+        """
+        Build the output motif for PasswordlessSudoCheck.
+        """
+        output_motif = ActionOutputMotif(
+            name="OutputMotif_PasswordlessSudoCheck",
+            description="Output motif for PasswordlessSudoCheck"
+        )
+
+        output_motif.add_template(
+            entity=Entity('Permission', alias='permission'),
+            template_name="discovered_permission",
+            relationship_type="has",
+            match_on=Entity('User', alias='user'),
+            invert_relationship=True,
+        )
+
+        output_motif.add_template(
+            entity=Entity('Session', alias='session', listed_sudo_permissions=True),
+            template_name="updated_session",
+            operation=StateChangeOperation.UPDATE,
+        )
+
+        return output_motif
+
 
     def expected_outcome(self, pattern: Pattern) -> list[str]:
         """
@@ -32,11 +78,8 @@ class PasswordlessSudoCheck(Action):
         """
         get_target_patterns check to find a session.
         """
-        session = Entity(type='Session', alias='session', active=True)
-        query = Query()
-        query.match(session)
-        query.where(session.listed_sudo_permissions.is_null())
-        query.where(session.protocol.is_in(['ssh', 'busybox', 'shell']))
+        query = self.input_motif.get_query()
+        query.where(self.input_motif.get_template('existing_session').entity.protocol.is_in(['ssh', 'busybox', 'shell']))
         query.ret_all()
         return query
 
@@ -50,29 +93,54 @@ class PasswordlessSudoCheck(Action):
         output = live_session.run_command("sudo -l")
         return ActionExecutionResult(command=["sudo -l"], stdout=output, session=tulpa_session_id)
 
+    def parse_output(self, output: ActionExecutionResult) -> dict:
+        """
+        Parse the output of the action.
+        """
+        lines = output.stdout.strip().split("\n")
+        discovered_permissions = []
+        for line in lines:
+            if "NOPASSWD" in line:
+                sudo_usr = line.split(")")[0].strip()[1:]
+                command = line.split("NOPASSWD:")[-1].strip()
+                discovered_permissions.append({
+                    'sudo_usr': sudo_usr,
+                    'command': command
+                })
+        return discovered_permissions
+
+    def populate_output_motif(self, kg: GraphDB, pattern: Pattern, discovered_data: dict) -> StateChangeSequence:
+        """
+        Populate the output motif with the discovered data.
+        """
+        self.output_motif.reset_context()
+        changes: StateChangeSequence = []
+
+        session = pattern.get('session')
+        username = session.get('username')
+
+        for discovered_permission in discovered_data:
+            changes.append(self.output_motif.instantiate(
+                template_name="discovered_permission",
+                match_on_override=Entity('User', alias='user', username=username),
+                name=discovered_permission['command'],
+                command=discovered_permission['command'],
+                as_user=discovered_permission['sudo_usr']
+            ))
+
+        changes.append(self.output_motif.instantiate(
+            template_name="updated_session",
+            match_on_override=session,
+            listed_sudo_permissions=True
+        ))
+        return changes
+
     def capture_state_change(
         self, kg: GraphDB, artefacts: ArtefactManager, pattern: Pattern, output: ActionExecutionResult
     ) -> StateChangeSequence:
         """
         Update knowledge graph with the discovered command permissions.
         """
-        session = pattern.get('session')
-        user = session.get('username')
-        lines = output.stdout.strip().split("\n")
-
-        changes: StateChangeSequence = []
-        for line in lines:
-            if "NOPASSWD" in line:
-                sudo_usr = line.split(")")[0].strip()[1:]
-                command = line.split("NOPASSWD:")[-1].strip()
-                if user:
-                    link_node = Entity(type='User', alias='user', username=user)
-                    merge_pattern = link_node.with_edge(Relationship(type='has', direction='r')).with_node(
-                        Entity(type='Permission', name=command, command=command, as_user=sudo_usr)
-                    )
-                    changes.append((link_node, "merge", merge_pattern))
-
-        new_session = session.copy()
-        new_session.set('listed_sudo_permissions', True)
-        changes.append((session, "update", new_session))
+        discovered_data = self.parse_output(output)
+        changes = self.populate_output_motif(kg, pattern, discovered_data)
         return changes

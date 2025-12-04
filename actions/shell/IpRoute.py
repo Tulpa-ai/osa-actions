@@ -8,6 +8,7 @@ from artefacts.ArtefactManager import ArtefactManager
 from kg_api import Entity, GraphDB, MultiPattern, Pattern, Relationship
 from kg_api.query import Query
 from Session import SessionManager
+from motifs import ActionInputMotif, ActionOutputMotif, StateChangeOperation
 
 
 class IpRoute(Action):
@@ -21,6 +22,66 @@ class IpRoute(Action):
         )
         self.noise = 0.8
         self.impact = 0
+        self.input_motif = self.build_input_motif()
+        self.output_motif = self.build_output_motif()
+
+    @classmethod
+    def build_input_motif(cls) -> ActionInputMotif:
+        """
+        Build the input motif for IpRoute.
+        """
+        input_motif = ActionInputMotif(
+            name="InputMotif_IpRoute", description="Input motif for IpRoute"
+        )
+
+        input_motif.add_template(
+            entity=Entity('Asset', alias='asset'),
+            template_name="existing_asset",
+        )
+
+        input_motif.add_template(
+            entity=Entity('OpenPort', alias='port'),
+            template_name="existing_port",
+            relationship_type="has",
+            match_on="existing_asset",
+            invert_relationship=True,
+        )
+
+        input_motif.add_template(
+            entity=Entity('Service', alias='service'),
+            template_name="existing_service",
+            relationship_type="is_running",
+            match_on="existing_port",
+            invert_relationship=True,
+        )
+
+        input_motif.add_template(
+            entity=Entity('Session', alias='session'),
+            template_name="existing_session",
+            relationship_type="executes_on",
+            match_on="existing_service",
+        )
+
+        return input_motif
+
+    @classmethod
+    def build_output_motif(cls) -> ActionOutputMotif:
+        """
+        Build the output motif for IpRoute.
+        """
+        output_motif = ActionOutputMotif(
+            name="OutputMotif_IpRoute", description="Output motif for IpRoute"
+        )
+
+        output_motif.add_template(
+            entity=Entity('Subnet', alias='subnet'),
+            template_name="discovered_subnet",
+            relationship_type="belongs_to",
+            match_on=Entity('Asset', alias='asset'),
+            invert_relationship=True,
+        )
+
+        return output_motif
 
     def expected_outcome(self, pattern: Pattern) -> list[str]:
         """
@@ -32,30 +93,17 @@ class IpRoute(Action):
         """
         get_target_patterns check for IP route. This action finds other subnets that can be scanned.
         """
-        session = Entity('Session', alias='session', active=True)
         # NB: this basic session type check will need to be removed when we do session management properly
         # matching_sessions = kg.match(session).where("NOT session.protocol IN ['rsh', 'ftp', 'msf']")
         # if not matching_sessions:
         #     return []
 
-        asset = Entity('Asset', alias='asset')
-        service = Entity('Service', alias='service')
-        session_service_pattern = session.with_edge(Relationship('executes_on', direction='r')).with_node(service)
-        match_pattern = (
-            asset.with_edge(Relationship('has'))
-            .with_node(Entity('OpenPort', alias='openport'))
-            .with_edge(Relationship('is_running'))
-            .with_node(service)
-            .combine(session_service_pattern)
-        )
-
         # res = kg.match(match_pattern).where(
         #     f"id(service) IN {[s.get('session').get('executes_on') for s in matching_sessions]} AND NOT session.protocol IN ['rsh', 'ftp', 'msf']"
         # )
-        query = Query()
-        query.match(match_pattern)
 
-        query.where_not(session.protocol.is_in(['rsh', 'ftp', 'msf']))
+        query = self.input_motif.get_query()
+        query.where_not(self.input_motif.get_template('existing_session').entity.protocol.is_in(['rsh', 'ftp', 'msf']))
         query.ret_all()
         return query
 
@@ -73,19 +121,40 @@ class IpRoute(Action):
         )
         return result
 
+    def parse_output(self, output: ActionExecutionResult) -> dict:
+        """
+        Parse the output of the IpRoute action.
+        """
+        subnet_pattern = r'\b\d{1,3}(?:\.\d{1,3}){3}/\d{1,2}\b'
+        matches = re.findall(subnet_pattern, output.stdout)
+        return {
+            "discovered_network_addresses": matches
+        }
+
+    def populate_output_motif(self, gdb: GraphDB, pattern: Pattern, discovered_data: dict) -> StateChangeSequence:
+        """
+        Populate the output motif for IpRoute.
+        """
+        self.output_motif.reset_context()
+        changes: StateChangeSequence = []
+
+        asset_to_match_on = pattern.get('asset')
+        for network_address in discovered_data["discovered_network_addresses"]:
+            changes.append(
+                self.output_motif.instantiate(
+                    template_name="discovered_subnet",
+                    match_on_override=asset_to_match_on,
+                    network_address=network_address
+                )
+            )
+        return changes
+
     def capture_state_change(
         self, gdb: GraphDB, artefacts: ArtefactManager, pattern: Pattern, output: ActionExecutionResult
     ) -> StateChangeSequence:
         """
         Read the target subnet from an environment variable instead of from the IP route tables.
         """
-        ip = pattern.get('asset').get('ip_address')
-        subnet_pattern = r'\b\d{1,3}(?:\.\d{1,3}){3}/\d{1,2}\b'
-        matches = re.findall(subnet_pattern, output.stdout)
-        changes: StateChangeSequence = []
-        for match in matches:
-            asset = Entity('Asset', alias='asset', ip_address=ip)
-            subnet = Entity('Subnet', alias='subnet', network_address=match)
-            sub_asset_pattern = asset.with_edge(Relationship('belongs_to')).with_node(subnet)
-            changes.append((asset, "merge", sub_asset_pattern))
+        discovered_data = self.parse_output(output)
+        changes = self.populate_output_motif(gdb, pattern, discovered_data)
         return changes
