@@ -8,6 +8,7 @@ from artefacts.ArtefactManager import ArtefactManager
 from kg_api import Entity, GraphDB, MultiPattern, Pattern, Relationship
 from kg_api.query import Query
 from Session import SessionManager
+from motifs import ActionInputMotif, ActionOutputMotif, StateChangeOperation
 
 
 def get_ssh_terminal(ip: str, username: str, key_filename: str = None, password: str = None):
@@ -38,6 +39,75 @@ class SshLoginWithCredentials(Action):
         super().__init__("SshLoginWithCredentials", "T1078", "TA0001", ["quiet", "fast"])
         self.noise = 0.1
         self.impact = 0.5
+        self.input_motif = self.build_input_motif()
+        self.output_motif = self.build_output_motif()
+
+    @classmethod
+    def build_input_motif(cls) -> ActionInputMotif:
+        """
+        Build the input motif for SshLoginWithCredentials.
+        """
+        input_motif = ActionInputMotif(
+            name="InputMotif_SshLoginWithCredentials", description="Input motif for SshLoginWithCredentials"
+        )
+
+        input_motif.add_template(
+            entity=Entity("Asset", alias="asset"),
+            template_name="existing_asset",
+        )
+
+        input_motif.add_template(
+            entity=Entity("OpenPort", alias="port"),
+            template_name="existing_port",
+            relationship_type="has",
+            match_on="existing_asset",
+            invert_relationship=True,
+        )
+
+        input_motif.add_template(
+            entity=Entity("Service", alias="service", protocol="ssh"),
+            template_name="existing_service",
+            relationship_type="is_running",
+            match_on="existing_port",
+            invert_relationship=True,
+        )
+
+        input_motif.add_template(
+            entity=Entity("Credentials", alias="credentials"),
+            template_name="existing_credentials",
+            relationship_type="secured_with",
+            match_on="existing_service",
+            expected_attributes=["password"],
+        )
+
+        input_motif.add_template(
+            entity=Entity("User", alias="user"),
+            template_name="existing_user",
+            relationship_type="is_client",
+            match_on="existing_service",
+        )
+
+        return input_motif
+
+    @classmethod
+    def build_output_motif(cls) -> ActionOutputMotif:
+        """
+        Build the output motif for SshLoginWithCredentials.
+        """
+        output_motif = ActionOutputMotif(
+            name="OutputMotif_SshLoginWithCredentials",
+            description="Output motif for SshLoginWithCredentials"
+        )
+
+        output_motif.add_template(
+            template_name="discovered_session",
+            entity=Entity("Session", alias="session", protocol="ssh", active=True),
+            relationship_type="executes_on",
+            match_on=Entity("Service", alias="service", protocol="ssh"),
+            expected_attributes=["id", "username", "password"]
+        )
+
+        return output_motif
 
     def expected_outcome(self, pattern: Pattern) -> list[str]:
         """
@@ -57,22 +127,11 @@ class SshLoginWithCredentials(Action):
         get_target_patterns check to identify SSH service entities, and derive login
         credentials from directory names and id files.
         """
-        asset = Entity('Asset', alias='asset')
-        service = Entity('Service', alias='service', protocol='ssh')
-        secured_with = Relationship('secured_with', direction='l')
-        credentials = Entity('Credentials', alias='credentials')
-        user = Entity('User', alias='user')
-        is_client = Relationship('is_client')
-        pattern = (
-            asset.directed_path_to(service)
-            .with_edge(secured_with)
-            .with_node(credentials)
-            .combine(user.with_edge(is_client).with_node(service))
+        query = self.input_motif.get_query()
+        query.where(
+            self.input_motif.get_template('existing_user').entity.username ==
+            self.input_motif.get_template('existing_credentials').entity.username
         )
-        query = Query()
-        query.match(pattern)
-        query.where(user.username == credentials.username)
-        query.where(credentials.password.is_not_null())
         query.ret_all()
         return query
 
@@ -104,25 +163,45 @@ class SshLoginWithCredentials(Action):
             logs=[f"Established session ID {sess_id} on {ip_address} with {username} and password: {password}"],
         )
 
+    def parse_output(self, output: ActionExecutionResult) -> dict:
+        """
+        Parse the output of the SshLoginWithCredentials action.
+        """
+        return {
+            "discovered_session": output.session,
+        }
+
+    def populate_output_motif(self, kg: GraphDB, pattern: Pattern, discovered_data: dict) -> StateChangeSequence:
+        """
+        Populate the output motif for SshLoginWithCredentials.
+        """
+        self.output_motif.reset_context()
+        changes: StateChangeSequence = []
+
+        user = pattern.get('user')
+        username = user.get('username')
+        credentials = pattern.get('credentials')
+        password = credentials.get('password')
+        service = pattern.get('service')
+
+        session_change = self.output_motif.instantiate(
+            template_name="discovered_session",
+            match_on_override=service,
+            id=discovered_data["discovered_session"],
+            username=username,
+            password=password,
+            active=True,
+        )
+        changes.append(session_change)
+        return changes
+
+
     def capture_state_change(
         self, kg: GraphDB, artefacts: ArtefactManager, pattern: Pattern, output: ActionExecutionResult
     ) -> StateChangeSequence:
         """
         Update knowledge graph with newly established session.
         """
-        user = pattern.get('user')
-        username = user.get('username')
-        credentials = pattern.get('credentials')
-        password = credentials.get('password')
-        service = pattern.get('service')
-        session = Entity(
-            'Session',
-            alias='session',
-            protocol='ssh',
-            username=username,
-            password=password,
-            active=True,
-            id=output.session,
-        )
-        session_service_pattern = session.with_edge(Relationship('executes_on', direction='r')).with_node(service)
-        return [(service, "merge", session_service_pattern)]
+        discovered_data = self.parse_output(output)
+        changes = self.populate_output_motif(kg, pattern, discovered_data)
+        return changes

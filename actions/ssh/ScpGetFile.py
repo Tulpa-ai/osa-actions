@@ -10,6 +10,7 @@ from artefacts.ArtefactManager import ArtefactManager
 from kg_api import Entity, GraphDB, MultiPattern, Pattern, Relationship
 from kg_api.query import Query
 from Session import SessionManager
+from motifs import ActionInputMotif, ActionOutputMotif, StateChangeOperation
 
 
 class ScpGetFile(Action):
@@ -26,6 +27,81 @@ class ScpGetFile(Action):
         super().__init__("ScpGetFile", "T1083", "TA0007", ["loud", "fast"])
         self.noise = 0.3
         self.impact = 1
+        self.input_motif = self.build_input_motif()
+        self.output_motif = self.build_output_motif()
+
+    @classmethod
+    def build_input_motif(cls) -> ActionInputMotif:
+        """
+        Build the input motif for ScpGetFile.
+        """
+        input_motif = ActionInputMotif(
+            name="InputMotif_ScpGetFile", description="Input motif for ScpGetFile"
+        )
+
+        input_motif.add_template(
+            entity=Entity('Asset', alias='asset'),
+            template_name="existing_asset",
+        )
+
+        input_motif.add_template(
+            entity=Entity('OpenPort', alias='port'),
+            template_name="existing_port",
+            relationship_type="has",
+            match_on="existing_asset",
+            invert_relationship=True,
+        )
+
+        input_motif.add_template(
+            entity=Entity('Service', alias='service', protocol='ssh'),
+            template_name="existing_service",
+            relationship_type="is_running",
+            match_on="existing_port",
+            invert_relationship=True,
+        )
+
+        input_motif.add_template(
+            entity=Entity('Credentials', alias='credentials'),
+            template_name="existing_credentials",
+            relationship_type="secured_with",
+            match_on="existing_service",
+        )
+
+        input_motif.add_template(
+            entity=Entity('Drive', alias='drive'),
+            template_name="existing_drive",
+            relationship_type="accesses",
+            match_on="existing_asset",
+            invert_relationship=True,
+        )
+
+        input_motif.add_template(
+            entity=Entity('File', alias='file', filename='id_rsa'),
+            template_name="existing_file",
+            relationship_type="directed_path",
+            match_on="existing_drive",
+            pattern_alias='filepath',
+        )
+
+        return input_motif
+
+    @classmethod
+    def build_output_motif(cls) -> ActionOutputMotif:
+        """
+        Build the output motif for ScpGetFile.
+        """
+        output_motif = ActionOutputMotif(
+            name="OutputMotif_ScpGetFile", description="Output motif for ScpGetFile"
+        )
+
+        output_motif.add_template(
+            template_name="discovered_file",
+            entity=Entity('File', alias='file', filename='id_rsa'),
+            expected_attributes=["artefact_id"],
+            operation=StateChangeOperation.UPDATE,
+        )
+
+        return output_motif
 
     def expected_outcome(self, pattern: Pattern) -> list[str]:
         """Generates the expected outcome for the action based on the provided pattern.
@@ -57,29 +133,7 @@ class ScpGetFile(Action):
         Returns:
             list[Union[Pattern, MultiPattern]]: A list of matching patterns representing valid targets.
         """
-        asset = Entity('Asset', alias='asset')
-        has = Relationship('has')
-        port = Entity('OpenPort', alias='openport')
-        is_running = Relationship('is_running')
-        service = Entity('Service', alias='service', protocol='ssh')
-        secured_with = Relationship('secured_with', direction='l')
-        credentials = Entity('Credentials', alias='credentials')
-        file = Entity(type='File', alias='file', filename='id_rsa')
-        drive = Entity('Drive', alias='drive')
-        file_pattern = drive.directed_path_to(file)
-        file_pattern.set_alias('filepath')
-        match_pattern = (
-            asset.with_edge(has)
-            .with_node(port)
-            .with_edge(is_running)
-            .with_node(service)
-            .with_edge(secured_with)
-            .with_node(credentials)
-            .combine(asset.connects_to(drive))
-            .combine(file_pattern)
-        )
-        query = Query()
-        query.match(match_pattern)
+        query = self.input_motif.get_query()
         query.ret_all()
         return query
 
@@ -149,6 +203,33 @@ class ScpGetFile(Action):
             return res
         raise ActionExecutionError("ScpGetFile: cannot run action, unable to extract the necessary values")
 
+    def parse_output(self, output: ActionExecutionResult, pattern: Pattern) -> dict:
+        """
+        Parse the output of the ScpGetFile action.
+        """
+        filename = pattern.get('filepath')[-1].get('filename')
+        return {
+            "file_id": output.artefacts[filename]
+        }
+
+    def populate_output_motif(self, kg: GraphDB, pattern: Pattern, discovered_data: dict) -> StateChangeSequence:
+        """
+        Populate the output motif for ScpGetFile.
+        """
+        self.output_motif.reset_context()
+        changes: StateChangeSequence = []
+
+        file_from_pattern = pattern.get('filepath')[-1]
+        file_from_pattern.alias = 'file'
+        changes.append(
+            self.output_motif.instantiate(
+                template_name="discovered_file",
+                match_on_override=file_from_pattern,
+                artefact_id=discovered_data["file_id"]
+            )
+        )
+        return changes
+
     def capture_state_change(
         self, kg: GraphDB, artefacts: ArtefactManager, pattern: Pattern, output: ActionExecutionResult
     ) -> StateChangeSequence:
@@ -164,17 +245,6 @@ class ScpGetFile(Action):
         Returns:
             StateChangeSequence: A sequence of changes made to the system state.
         """
-
-        changes: StateChangeSequence = []
-
-        as_pattern = pattern[0]
-        file_pattern = pattern.get('filepath')
-        file_pattern[-1].alias = 'file'
-        match_pattern = as_pattern.combine(file_pattern)
-        file = file_pattern[-1].copy()
-        file.alias = 'file'
-        file.set('artefact_id', output.artefacts[file.get('filename')])
-
-        changes.append((match_pattern, 'update', file))
-
+        discovered_data = self.parse_output(output, pattern)
+        changes = self.populate_output_motif(kg, pattern, discovered_data)
         return changes
