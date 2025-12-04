@@ -28,46 +28,54 @@ class FtpDiscoverSSHUserAccounts(Action):
         )
 
         input_motif.add_template(
-            template_name="existing_asset",
             entity=Entity('Asset', alias='asset'),
+            template_name="existing_asset",
         )
 
         input_motif.add_template(
-            template_name="existing_port",
-            entity=Entity('OpenPort', alias='port'),
-            match_on="existing_asset",
+            entity=Entity('OpenPort', alias='ftp_port'),
+            template_name="existing_ftp_port",
             relationship_type="has",
+            match_on="existing_asset",
             invert_relationship=True,
         )
 
         input_motif.add_template(
+            entity=Entity('Service', alias='ftp_service', protocol='ftp'),
             template_name="existing_ftp_service",
-            entity=Entity('Service', alias='service', protocol='ftp'),
-            match_on="existing_port",
             relationship_type="is_running",
+            match_on="existing_ftp_port",
             invert_relationship=True,
         )
 
         input_motif.add_template(
-            template_name="existing_drive",
             entity=Entity('Drive', alias='drive'),
-            match_on="existing_ftp_service",
+            template_name="existing_drive",
             relationship_type="accesses",
+            match_on="existing_ftp_service",
             invert_relationship=True,
         )
 
         input_motif.add_template(
-            template_name="existing_directory",
             entity=Entity('Directory', alias='directory', dirname='.ssh'),
-            match_on="existing_drive",
+            template_name="existing_directory",
             relationship_type="directed_path",
+            match_on="existing_drive",
         )
 
         input_motif.add_template(
+            entity=Entity('OpenPort', alias='ssh_port'),
+            template_name="existing_ssh_port",
+            relationship_type="has",
+            match_on="existing_asset",
+            invert_relationship=True,
+        )
+
+        input_motif.add_template(
+            entity=Entity('Service', alias='ssh_service', protocol='ssh'),
             template_name="existing_ssh_service",
-            entity=Entity('Service', alias='service', protocol='ssh'),
-            match_on="existing_port",
             relationship_type="is_running",
+            match_on="existing_ssh_port",
             invert_relationship=True,
         )
 
@@ -110,7 +118,7 @@ class FtpDiscoverSSHUserAccounts(Action):
 
     def expected_outcome(self, pattern: Pattern) -> list[str]:
         ip = pattern.get('asset').get('ip_address')
-        service = pattern.get('service')._id
+        service = pattern.get('ftp_service')._id
         return [f"Use the file system using the ftp service ({service}) on {ip} to infer SSH user accounts"]
 
     def get_target_query(self) -> Query:
@@ -162,7 +170,7 @@ class FtpDiscoverSSHUserAccounts(Action):
         # TODO: This action needs to be modified so that the added user is linked to both the FTP and SSH services
         self.output_motif.reset_context()
         changes: StateChangeSequence = []
-        
+
         ssh_service = pattern.get('ssh_service')
         # Only create SSH service if we discovered users
         if len(discovered_data["ssh_users"]) > 0:

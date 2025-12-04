@@ -73,6 +73,11 @@ class FTPAnonymousLogin(Action):
             f"Gain a session on FTP service ({pattern.get('service')._id}) on {pattern.get('asset').get('ip_address')}"
         ]
 
+    def get_target_query(self) -> Query:
+        query = self.input_motif.get_query()
+        query.ret_all()
+        return query
+
     def function(self, sessions: SessionManager, artefacts, pattern: Pattern) -> ActionExecutionResult:
         asset = pattern.get('asset')
         ip_address = asset.get('ip_address')

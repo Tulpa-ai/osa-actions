@@ -6,7 +6,7 @@ from action_state_interface.action import Action, StateChangeSequence
 from action_state_interface.action_utils import shell
 from action_state_interface.exec import ActionExecutionResult
 from artefacts.ArtefactManager import ArtefactManager
-from kg_api import Ent, GraphDB, MultiPattern, Pattern, Rel
+from kg_api import Entity, GraphDB, MultiPattern, Pattern, Relationship
 from kg_api.query import Query
 from kg_api.utils import safe_add_user
 from Session import SessionManager
@@ -38,12 +38,12 @@ class HydraBruteForceAction(Action):
 
         input_motif.add_template(
             template_name="existing_asset",
-            entity=Ent('Asset', alias='asset'),
+            entity=Entity('Asset', alias='asset'),
         )
 
         input_motif.add_template(
             template_name="existing_port",
-            entity=Ent('OpenPort', alias='port'),
+            entity=Entity('OpenPort', alias='port'),
             match_on="existing_asset",
             relationship_type="has",
             invert_relationship=True,
@@ -51,7 +51,7 @@ class HydraBruteForceAction(Action):
 
         input_motif.add_template(
             template_name="existing_service",
-            entity=Ent('Service', alias='service'),
+            entity=Entity('Service', alias='service'),
             match_on="existing_port",
             relationship_type="is_running",
             invert_relationship=True,
@@ -75,22 +75,22 @@ class HydraBruteForceAction(Action):
 
         # Template for Credentials entity
         # This will be instantiated with match_on_override to match on the service from input pattern
-        # match_on is set to Ent('Service') as a placeholder (will be overridden during instantiation)
+        # match_on is set to Entity('Service') as a placeholder (will be overridden during instantiation)
         output_motif.add_template(
-            entity=Ent('Credentials', alias='creds'),
+            entity=Entity('Credentials', alias='creds'),
             template_name="discovered_credentials",
-            match_on=Ent('Service'),
+            match_on=Entity('Service'),
             relationship_type='secured_with',
             operation=StateChangeOperation.MERGE_IF_NOT_MATCH
         )
 
         # Template for User entity
         # This will be instantiated with match_on_override to match on the service from input pattern
-        # match_on is set to Ent('Service') as a placeholder (will be overridden during instantiation)
+        # match_on is set to Entity('Service') as a placeholder (will be overridden during instantiation)
         output_motif.add_template(
-            entity=Ent('User', alias='user'),
+            entity=Entity('User', alias='user'),
             template_name="discovered_user",
-            match_on=Ent('Service'),
+            match_on=Entity('Service'),
             relationship_type='is_client',
             invert_relationship=False,  # User -[is_client]-> Service (relationship is inverted in schema)
             operation=StateChangeOperation.MERGE_IF_NOT_MATCH
@@ -112,8 +112,7 @@ class HydraBruteForceAction(Action):
         Identify target patterns with Asset -> Path -> Service (selected service).
         """
         query = self.input_motif.get_query()
-        service = MultiPattern(query.get_patterns()).get('service')
-        query.where(service.protocol.is_in(['ftp', 'ssh']))
+        query.where(self.input_motif.get_template('existing_service').entity.protocol.is_in(['ftp', 'ssh']))
         query.ret_all()
         return query
 
