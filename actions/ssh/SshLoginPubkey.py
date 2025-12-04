@@ -9,6 +9,7 @@ from artefacts.ArtefactManager import ArtefactManager
 from kg_api import Entity, GraphDB, MultiPattern, Pattern, Relationship
 from kg_api.query import Query
 from Session import SessionManager
+from motifs import ActionInputMotif, ActionOutputMotif, StateChangeOperation
 
 
 def get_ssh_terminal(ip: str, username: str, key_filename: str = None, password: str = None):
@@ -39,6 +40,92 @@ class SshLoginPubkey(Action):
         super().__init__("SshLoginPubkey", "T1078", "TA0001", ["quiet", "fast"])
         self.noise = 0.1
         self.impact = 0.5
+        self.input_motif = self.build_input_motif()
+        self.output_motif = self.build_output_motif()
+
+    @classmethod
+    def build_input_motif(cls) -> ActionInputMotif:
+        """
+        Build the input motif for SshLoginPubkey.
+        """
+        input_motif = ActionInputMotif(
+            name="InputMotif_SshLoginPubkey",
+            description="Input motif for SshLoginPubkey"
+        )
+
+        input_motif.add_template(
+            entity=Entity('Asset', alias='asset'),
+            template_name="existing_asset",
+        )
+
+        input_motif.add_template(
+            entity=Entity('OpenPort', alias='port'),
+            template_name="existing_port",
+            relationship_type="has",
+            match_on="existing_asset",
+            invert_relationship=True,
+        )
+
+        input_motif.add_template(
+            entity=Entity('Service', alias='service', protocol='ssh'),
+            template_name="existing_service",
+            relationship_type="is_running",
+            match_on="existing_port",
+            invert_relationship=True,
+        )
+
+        input_motif.add_template(
+            entity=Entity('Directory', alias='directory'),
+            template_name="existing_directory",
+            relationship_type="directed_path",
+            match_on="existing_asset",
+        )
+
+        input_motif.add_template(
+            entity=Entity('File', alias='file', filename='id_rsa'),
+            template_name="existing_file",
+            relationship_type="directed_path",
+            match_on="existing_directory",
+            expected_attributes=["artefact_id"],
+        )
+
+        input_motif.add_template(
+            entity=Entity('User', alias='user'),
+            template_name="existing_user",
+            relationship_type="is_client",
+            match_on="existing_service",
+        )
+
+        return input_motif
+
+    @classmethod
+    def build_output_motif(cls) -> ActionOutputMotif:
+        """
+        Build the output motif for SshLoginPubkey.
+        """
+        output_motif = ActionOutputMotif(
+            name="OutputMotif_SshLoginPubkey",
+            description="Output motif for SshLoginPubkey"
+        )
+
+        output_motif.add_template(
+            entity=Entity('Credentials', alias='credentials'),
+            template_name="discovered_credentials",
+            relationship_type="secured_with",
+            match_on=Entity('Service', alias='service', protocol='ssh'),
+            expected_attributes=["username", "key_file"],
+            operation=StateChangeOperation.MERGE_IF_NOT_MATCH,
+        )
+
+        output_motif.add_template(
+            entity=Entity('Session', alias='session', protocol='ssh'),
+            template_name="discovered_session",
+            relationship_type="executes_on",
+            match_on=Entity('Service', alias='service', protocol='ssh'),
+            expected_attributes=["protocol", "username", "active", "id"],
+        )
+
+        return output_motif
 
     def expected_outcome(self, pattern: Pattern) -> list[str]:
         """
@@ -60,19 +147,8 @@ class SshLoginPubkey(Action):
         get_target_patterns check to identify SSH service entities, and derive login
         credentials from directory names and id files.
         """
-        asset = Entity('Asset', alias='asset')
-        service = Entity('Service', alias='service', protocol='ssh')
-        directory = Entity(type='Directory', alias='directory')
-        file = Entity(type='File', alias='file', filename='id_rsa')
-        user = Entity(type='User', alias='user')
-        p1 = asset.directed_path_to(directory).directed_path_to(file)
-        p2 = user.with_edge(Relationship('is_client', direction='r')).with_node(service)
-        p3 = asset.directed_path_to(service)
-        pattern = p1.combine(p2).combine(p3)
-        query = Query()
-        query.match(pattern)
-        query.where(user.username == directory.dirname)
-        query.where(file.artefact_id.is_not_null())
+        query = self.input_motif.get_query()
+        query.where(self.input_motif.get_template('existing_directory').entity.dirname == self.input_motif.get_template('existing_user').entity.username)
         query.ret_all()
         return query
 
@@ -106,37 +182,50 @@ class SshLoginPubkey(Action):
             logs=[f"Established session ID {sess_id} on {ip_address} with {username} and key file: {ssh_key_file}"],
         )
 
+    def populate_output_motif(self, kg: GraphDB, pattern: Pattern, discovered_data: dict) -> StateChangeSequence:
+        """
+        Populate the output motif for SshLoginPubkey.
+        """
+        self.output_motif.reset_context()
+        changes: StateChangeSequence = []
+
+        user = pattern.get('user')
+        username = user.get('username')
+        service = pattern.get('service')
+
+        changes.append(self.output_motif.instantiate(
+            template_name="discovered_credentials",
+            match_on_override=service,
+            username=username,
+            key_file=discovered_data['key_file'],
+        ))
+
+        changes.append(self.output_motif.instantiate(
+            template_name="discovered_session",
+            match_on_override=service,
+            protocol='ssh',
+            username=username,
+            active=True,
+            id=discovered_data['session_id'],
+        ))
+
+        return changes
+
+    def parse_output(self, output: ActionExecutionResult) -> dict:
+        """
+        Parse the output of the action.
+        """
+        return {
+            'session_id': output.session,
+            'key_file': output.command[2],
+        }
+
     def capture_state_change(
         self, kg: GraphDB, artefacts: ArtefactManager, pattern: Pattern, output: ActionExecutionResult
     ) -> StateChangeSequence:
         """
         Update knowledge graph with newly established session.
         """
-        asset = pattern.get('asset')
-        user = pattern.get('user')
-        username = user.get('username')
-        service = pattern.get('service')
-        credentials = Entity(
-            'Credentials',
-            alias='credentials',
-            username=username,
-            key_file=output.command[2],
-        )
-
-        match_pattern = asset.directed_path_to(service)
-        creds_pattern = credentials.with_edge(Relationship('secured_with')).with_node(service)
-
-        session = Entity(
-            'Session',
-            alias='session',
-            protocol='ssh',
-            username=username,
-            active=True,
-            id=output.session,
-        )
-
-        session_service_pattern = session.with_edge(Relationship('executes_on', direction='r')).with_node(service)
-        changes: StateChangeSequence = []
-        changes.append((service, "merge", session_service_pattern))
-        changes.append((match_pattern, 'merge_if_not_match', creds_pattern))
+        discovered_data = self.parse_output(output)
+        changes = self.populate_output_motif(kg, pattern, discovered_data)
         return changes
