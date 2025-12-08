@@ -1,7 +1,8 @@
 from pathlib import Path
-from typing import Union
+from typing import Any, Union
 
 from action_state_interface.action import Action, StateChangeSequence
+from action_state_interface.exec import ActionExecutionResult
 from kg_api import Entity, GraphDB, MultiPattern, Pattern
 from kg_api.query import Query
 from action_state_interface.action_utils import shell
@@ -67,3 +68,17 @@ class HttpDownloadFile(Action):
         new_file.set('downloaded', True)
         changes: StateChangeSequence = [(pattern, "update", new_file)]
         return changes
+
+    def parse_output(self, output: ActionExecutionResult) -> dict[str, Any]:
+        """
+        Placeholder implementation for actions not using the new architecture.
+        """
+        return {}
+
+    def populate_output_motif(
+        self, parsed_output: dict[str, Any], pattern: Union[Pattern, MultiPattern]
+    ) -> StateChangeSequence:
+        """
+        Placeholder implementation for actions not using the new architecture.
+        """
+        return []
