@@ -7,7 +7,7 @@ from action_state_interface.action import Action, StateChangeSequence
 from action_state_interface.action_utils import run_command, shell
 from action_state_interface.exec import ActionExecutionResult
 from artefacts.ArtefactManager import ArtefactManager
-from kg_api import Entity, GraphDB, MultiPattern, Pattern, Relationship
+from kg_api import Entity, MultiPattern, Pattern, Relationship
 from kg_api.query import Query
 from kg_api.utils import safe_add_user
 from Session import SessionManager
@@ -170,7 +170,7 @@ class DiscoverSSHAuthMethods(Action):
             "ssh_authentication": ssh_authentication
         }
 
-    def populate_output_motif(self, kg: GraphDB, pattern: Pattern, discovered_data: dict) -> StateChangeSequence:
+    def populate_output_motif(self, pattern: Pattern, discovered_data: dict) -> StateChangeSequence:
         """
         Populate the output motif for DiscoverSSHAuthMethods.
         
@@ -209,11 +209,11 @@ class DiscoverSSHAuthMethods(Action):
 
 
     def capture_state_change(
-        self, kg: GraphDB, artefacts: ArtefactManager, pattern: MultiPattern, output: ActionExecutionResult
+        self, artefacts: ArtefactManager, pattern: MultiPattern, output: ActionExecutionResult
     ) -> StateChangeSequence:
         """
         If the user is configured with anonymous SSH login permissions.
         """
         discovered_data = self.parse_output(output, artefacts)
-        changes = self.populate_output_motif(kg, pattern, discovered_data)
+        changes = self.populate_output_motif(pattern, discovered_data)
         return changes

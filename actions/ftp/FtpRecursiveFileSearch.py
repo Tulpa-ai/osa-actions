@@ -4,7 +4,7 @@ from typing import Union
 from ftplib import FTP, error_perm
 from fuzzywuzzy import fuzz
 from action_state_interface.action import Action, StateChangeSequence
-from kg_api import Entity, GraphDB, MultiPattern, Pattern, Relationship
+from kg_api import Entity, MultiPattern, Pattern, Relationship
 from kg_api.query import Query
 from Session import SessionManager
 from motifs import ActionInputMotif, ActionOutputMotif
@@ -202,7 +202,7 @@ class FtpRecursiveFileSearch(Action):
 
         return discovered_files
 
-    def populate_output_motif(self, kg: GraphDB, pattern: Pattern, discovered_data: dict) -> StateChangeSequence:
+    def populate_output_motif(self, pattern: Pattern, discovered_data: dict) -> StateChangeSequence:
         self.output_motif.reset_context()
         changes: StateChangeSequence = []
 
@@ -244,8 +244,8 @@ class FtpRecursiveFileSearch(Action):
         return changes
 
     def capture_state_change(
-        self, kg: GraphDB, artefacts, pattern: Pattern, output
+        self, artefacts, pattern: Pattern, output
     ) -> StateChangeSequence:
         discovered_data = self.parse_output(output)
-        changes = self.populate_output_motif(kg, pattern, discovered_data)
+        changes = self.populate_output_motif(pattern, discovered_data)
         return changes

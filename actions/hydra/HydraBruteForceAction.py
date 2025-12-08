@@ -6,7 +6,7 @@ from action_state_interface.action import Action, StateChangeSequence
 from action_state_interface.action_utils import shell
 from action_state_interface.exec import ActionExecutionResult
 from artefacts.ArtefactManager import ArtefactManager
-from kg_api import Entity, GraphDB, MultiPattern, Pattern, Relationship
+from kg_api import Entity, MultiPattern, Pattern, Relationship
 from kg_api.query import Query
 from kg_api.utils import safe_add_user
 from Session import SessionManager
@@ -181,7 +181,7 @@ class HydraBruteForceAction(Action):
             "discovered_credentials": discovered_credentials
         }
 
-    def populate_output_motif(self, kg: GraphDB, pattern: Pattern, discovered_data: dict) -> StateChangeSequence:
+    def populate_output_motif(self, pattern: Pattern, discovered_data: dict) -> StateChangeSequence:
         """
         Populate output motif templates using the motif instantiation system.
         
@@ -191,7 +191,6 @@ class HydraBruteForceAction(Action):
         3. Instantiates the discovered_user template for each discovered user
         
         Args:
-            kg: GraphDB instance
             pattern: Input pattern containing the asset and service
             discovered_data: Dictionary containing parsed credential data
             
@@ -226,7 +225,7 @@ class HydraBruteForceAction(Action):
         return changes
 
     def capture_state_change(
-        self, kg: GraphDB, artefacts: ArtefactManager, pattern: Pattern, output: ActionExecutionResult
+        self, artefacts: ArtefactManager, pattern: Pattern, output: ActionExecutionResult
     ) -> StateChangeSequence:
         """
         Parse the Hydra brute-force output and create state changes for discovered credentials.
@@ -236,5 +235,5 @@ class HydraBruteForceAction(Action):
         2. Creates state changes to add credentials and users to the knowledge graph
         """
         discovered_data = self.parse_output(output, artefacts)
-        changes = self.populate_output_motif(kg, pattern, discovered_data)
+        changes = self.populate_output_motif(pattern, discovered_data)
         return changes

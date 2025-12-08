@@ -7,7 +7,7 @@ from action_state_interface.action import Action, StateChangeSequence
 from action_state_interface.action_utils import run_command
 from builtin_actions.ftp.FtpRecursiveFileSearch import filter_files_by_wordlist  # isort:skip
 from artefacts.ArtefactManager import ArtefactManager
-from kg_api import Entity, GraphDB, MultiPattern, Pattern, Relationship
+from kg_api import Entity, MultiPattern, Pattern, Relationship
 from kg_api.query import Query
 from Session import SessionManager
 from motifs import ActionInputMotif, ActionOutputMotif, StateChangeOperation
@@ -234,7 +234,7 @@ class LocalRecursiveFileSearch(Action):
         return discovered_files
                 
 
-    def populate_output_motif(self, kg: GraphDB, pattern: Pattern, discovered_data: dict) -> StateChangeSequence:
+    def populate_output_motif(self, pattern: Pattern, discovered_data: dict) -> StateChangeSequence:
         """
         Populate the output motif with the discovered data.
         """
@@ -282,7 +282,7 @@ class LocalRecursiveFileSearch(Action):
         return changes
 
     def capture_state_change(
-        self, kg: GraphDB, artefacts: ArtefactManager, pattern: Pattern, output: Any
+        self, artefacts: ArtefactManager, pattern: Pattern, output: Any
     ) -> StateChangeSequence:
         """
         Update the knowledge graph with discovered files.
@@ -291,7 +291,6 @@ class LocalRecursiveFileSearch(Action):
         the asset and its directory structure.
 
         Args:
-            kg (GraphDB): The knowledge graph to update.
             artefacts (ArtefactManager): Manages stored artefacts.
             pattern (Pattern): The pattern containing asset details.
             output (Any): The list of discovered files.
@@ -300,40 +299,5 @@ class LocalRecursiveFileSearch(Action):
             StateChangeSequence: A sequence of state changes to be applied to the knowledge graph.
         """
         discovered_data = self.parse_output(output)
-        changes = self.populate_output_motif(kg, pattern, discovered_data)
+        changes = self.populate_output_motif(pattern, discovered_data)
         return changes
-
-        # changes: StateChangeSequence = []
-
-        # if len(output) == 0:
-        #     return changes
-
-        # asset: Entity = pattern.get('asset')
-        # ip_address = asset.get('ip_address')
-
-        # drive = Entity('Drive', alias='drive', location=f'{ip_address}/')
-        # asset_drive_pattern = asset.with_edge(Relationship('accesses', direction='r')).with_node(drive)
-        # changes.append((asset, 'merge_if_not_match', asset_drive_pattern))
-
-        # for filename in output:
-        #     path_list = [f for f in filename.split('/') if len(f) > 0]
-        #     filename = path_list.pop()
-
-        #     match_pattern = asset_drive_pattern
-        #     merge_pattern = drive
-
-        #     n = 0
-        #     for path in path_list:
-        #         directory = Entity('Directory', alias=f'directory{n}', dirname=path)
-        #         merge_pattern = merge_pattern.with_edge(Relationship('has', direction='r')).with_node(directory)
-        #         changes.append((match_pattern, "merge_if_not_match", merge_pattern))
-        #         match_pattern = match_pattern.with_edge(Relationship('has', direction='r')).with_node(directory)
-        #         merge_pattern = directory
-        #         n += 1
-
-        #     merge_pattern = merge_pattern.with_edge(Relationship('has', direction='r')).with_node(
-        #         Entity(type='File', filename=filename)
-        #     )
-        #     changes.append((match_pattern, "merge_if_not_match", merge_pattern))
-
-        # return changes

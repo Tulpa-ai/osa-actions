@@ -2,7 +2,7 @@ import os
 from typing import Any, Union
 from action_state_interface.action import Action, StateChangeSequence
 from artefacts.ArtefactManager import ArtefactManager
-from kg_api import Ent, Entity, GraphDB, MultiPattern, Pattern, Rel, Relationship
+from kg_api import Ent, Entity, MultiPattern, Pattern, Rel, Relationship
 from kg_api.query import Query
 from motifs import ActionInputMotif, ActionOutputMotif, StateChangeOperation
 
@@ -149,7 +149,7 @@ class FtpDiscoverSSHUserAccounts(Action):
             "ssh_users": list(ssh_users),
         }
 
-    def populate_output_motif(self, gdb: GraphDB, pattern: Pattern, discovered_data: dict) -> StateChangeSequence:
+    def populate_output_motif(self, pattern: Pattern, discovered_data: dict) -> StateChangeSequence:
         """
         Populate output motif templates using the motif instantiation system.
         
@@ -160,7 +160,6 @@ class FtpDiscoverSSHUserAccounts(Action):
         4. Instantiates the ssh_user template for each discovered user
         
         Args:
-            gdb: GraphDB instance
             pattern: Input pattern containing the asset
             discovered_data: Dictionary containing parsed SSH user data
             
@@ -190,7 +189,7 @@ class FtpDiscoverSSHUserAccounts(Action):
         return changes
 
     def capture_state_change(
-        self, kg: GraphDB, artefacts: ArtefactManager, pattern: Pattern, output: Any
+        self, artefacts: ArtefactManager, pattern: Pattern, output: Any
     ) -> StateChangeSequence:
         """Capture and update the knowledge graph based on discovered SSH user accounts.
 
@@ -198,7 +197,6 @@ class FtpDiscoverSSHUserAccounts(Action):
         and updates the knowledge graph by linking users to the SSH service running on the asset.
 
         Args:
-            kg (GraphDB): The knowledge graph database storing entity relationships.
             artefacts (ArtefactManager): Manages stored artefacts.
             pattern (Pattern): Contains asset-related information.
             output (list[str]): The list of discovered file paths.
@@ -207,5 +205,5 @@ class FtpDiscoverSSHUserAccounts(Action):
             StateChangeSequence: A sequence of state changes to be applied to the knowledge graph.
         """
         discovered_data = self.parse_output(output)
-        changes = self.populate_output_motif(kg, pattern, discovered_data)
+        changes = self.populate_output_motif(pattern, discovered_data)
         return changes

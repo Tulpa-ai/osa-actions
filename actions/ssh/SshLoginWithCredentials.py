@@ -5,7 +5,7 @@ import paramiko
 from action_state_interface.action import Action, StateChangeSequence
 from action_state_interface.exec import ActionExecutionResult
 from artefacts.ArtefactManager import ArtefactManager
-from kg_api import Entity, GraphDB, MultiPattern, Pattern, Relationship
+from kg_api import Entity, MultiPattern, Pattern, Relationship
 from kg_api.query import Query
 from Session import SessionManager
 from motifs import ActionInputMotif, ActionOutputMotif, StateChangeOperation
@@ -171,7 +171,7 @@ class SshLoginWithCredentials(Action):
             "discovered_session": output.session,
         }
 
-    def populate_output_motif(self, kg: GraphDB, pattern: Pattern, discovered_data: dict) -> StateChangeSequence:
+    def populate_output_motif(self, pattern: Pattern, discovered_data: dict) -> StateChangeSequence:
         """
         Populate the output motif for SshLoginWithCredentials.
         """
@@ -197,11 +197,11 @@ class SshLoginWithCredentials(Action):
 
 
     def capture_state_change(
-        self, kg: GraphDB, artefacts: ArtefactManager, pattern: Pattern, output: ActionExecutionResult
+        self, artefacts: ArtefactManager, pattern: Pattern, output: ActionExecutionResult
     ) -> StateChangeSequence:
         """
         Update knowledge graph with newly established session.
         """
         discovered_data = self.parse_output(output)
-        changes = self.populate_output_motif(kg, pattern, discovered_data)
+        changes = self.populate_output_motif(pattern, discovered_data)
         return changes

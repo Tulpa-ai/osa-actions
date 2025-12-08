@@ -4,7 +4,7 @@ from action_state_interface.action import Action, StateChangeSequence
 from action_state_interface.action_utils import parse_nmap_xml_report, shell, query_scap_for_cve_fuzzy
 from action_state_interface.exec import ActionExecutionError, ActionExecutionResult
 from artefacts.ArtefactManager import ArtefactManager
-from kg_api import Entity, GraphDB, Pattern, Relationship
+from kg_api import Entity, Pattern, Relationship
 from kg_api.query import Query
 from Session import SessionManager
 from motifs import ActionInputMotif, ActionOutputMotif
@@ -311,7 +311,7 @@ class NmapAssetScan(Action):
             "processed_ports": processed_ports
         }
 
-    def populate_output_motif(self, gdb: GraphDB, pattern: Pattern, discovered_data: dict, conn=None) -> StateChangeSequence:
+    def populate_output_motif(self, pattern: Pattern, discovered_data: dict, conn=None) -> StateChangeSequence:
         """
         Create state changes from parsed nmap data using the new parsing approach and motif templates.
 
@@ -326,7 +326,6 @@ class NmapAssetScan(Action):
         8. Returns all state changes
 
         Args:
-            gdb: GraphDB instance
             pattern: Input pattern containing the asset
             discovered_data: Dictionary containing parsed nmap data from parse_output
             conn: Database connection for CVE queries
@@ -398,7 +397,6 @@ class NmapAssetScan(Action):
 
     def capture_state_change(
         self,
-        gdb: GraphDB,
         artefacts: ArtefactManager,
         pattern: Pattern,
         output: ActionExecutionResult,
@@ -408,5 +406,5 @@ class NmapAssetScan(Action):
         Capture the state changes from the nmap output.
         """
         discovered_data = self.parse_output(artefacts, output, conn)
-        changes = self.populate_output_motif(gdb, pattern, discovered_data, conn)
+        changes = self.populate_output_motif(pattern, discovered_data, conn)
         return changes

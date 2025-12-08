@@ -7,7 +7,7 @@ from action_state_interface.action import Action, StateChangeSequence
 from action_state_interface.action_utils import shell
 from action_state_interface.exec import ActionExecutionError, ActionExecutionResult
 from artefacts.ArtefactManager import ArtefactManager
-from kg_api import Entity, GraphDB, MultiPattern, Pattern, Relationship
+from kg_api import Entity, MultiPattern, Pattern, Relationship
 from kg_api.query import Query
 from Session import SessionManager
 from motifs import ActionInputMotif, ActionOutputMotif, StateChangeOperation
@@ -212,7 +212,7 @@ class ScpGetFile(Action):
             "file_id": output.artefacts[filename]
         }
 
-    def populate_output_motif(self, kg: GraphDB, pattern: Pattern, discovered_data: dict) -> StateChangeSequence:
+    def populate_output_motif(self, pattern: Pattern, discovered_data: dict) -> StateChangeSequence:
         """
         Populate the output motif for ScpGetFile.
         """
@@ -231,13 +231,12 @@ class ScpGetFile(Action):
         return changes
 
     def capture_state_change(
-        self, kg: GraphDB, artefacts: ArtefactManager, pattern: Pattern, output: ActionExecutionResult
+        self, artefacts: ArtefactManager, pattern: Pattern, output: ActionExecutionResult
     ) -> StateChangeSequence:
         """
         Captures the state change in the knowledge graph after the SCP action.
 
         Args:
-            kg (GraphDB): The knowledge graph representing the current state of the system.
             artefacts (ArtefactManager): Manages artefacts related to the SCP action.
             pattern (Pattern): The pattern describing the targeted asset and file.
             output (ActionExecutionResult): The result of the SCP command execution.
@@ -246,5 +245,5 @@ class ScpGetFile(Action):
             StateChangeSequence: A sequence of changes made to the system state.
         """
         discovered_data = self.parse_output(output, pattern)
-        changes = self.populate_output_motif(kg, pattern, discovered_data)
+        changes = self.populate_output_motif(pattern, discovered_data)
         return changes

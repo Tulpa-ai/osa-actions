@@ -3,7 +3,7 @@ from typing import Union
 from action_state_interface.action import Action, StateChangeSequence
 from action_state_interface.exec import ActionExecutionResult, ActionExecutionError
 from artefacts.ArtefactManager import ArtefactManager
-from kg_api import Entity, GraphDB, MultiPattern, Pattern, Relationship
+from kg_api import Entity, MultiPattern, Pattern, Relationship
 from kg_api.query import Query
 from Session import SessionManager
 from motifs import ActionInputMotif, ActionOutputMotif, StateChangeOperation
@@ -129,7 +129,7 @@ class ObtainShellOnExistingSession(Action):
             'shell_session_active': True,
         }
 
-    def populate_output_motif(self, kg: GraphDB, pattern: Pattern, discovered_data: dict) -> StateChangeSequence:
+    def populate_output_motif(self, pattern: Pattern, discovered_data: dict) -> StateChangeSequence:
         """
         Populate the output motif with the discovered data.
         """
@@ -179,11 +179,11 @@ class ObtainShellOnExistingSession(Action):
         return changes
 
     def capture_state_change(
-        self, kg: GraphDB, artefacts: ArtefactManager, pattern: Pattern, output: ActionExecutionResult
+        self, artefacts: ArtefactManager, pattern: Pattern, output: ActionExecutionResult
     ) -> StateChangeSequence:
         """
         Update knowledge graph to reflect the new shell session.
         """
         discovered_data = self.parse_output(output, artefacts)
-        changes = self.populate_output_motif(kg, pattern, discovered_data)
+        changes = self.populate_output_motif(pattern, discovered_data)
         return changes

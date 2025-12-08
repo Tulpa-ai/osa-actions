@@ -2,7 +2,7 @@ from ftplib import FTP
 from typing import Union
 from action_state_interface.action import Action, StateChangeSequence
 from action_state_interface.exec import ActionExecutionResult
-from kg_api import Entity, GraphDB, MultiPattern, Pattern, Relationship
+from kg_api import Entity, MultiPattern, Pattern, Relationship
 from kg_api.query import Query
 from Session import SessionManager
 from motifs import ActionInputMotif, ActionOutputMotif
@@ -113,7 +113,7 @@ class FTPLoginWithCredentials(Action):
             "session": output.session,
         }
 
-    def populate_output_motif(self, kg: GraphDB, pattern: Pattern, discovered_data: dict) -> StateChangeSequence:
+    def populate_output_motif(self, pattern: Pattern, discovered_data: dict) -> StateChangeSequence:
         """
         Populate the output motif for FTPLoginWithCredentials.
         """
@@ -129,11 +129,11 @@ class FTPLoginWithCredentials(Action):
         return changes
 
     def capture_state_change(
-        self, kg: GraphDB, artefacts, pattern: Pattern, output: ActionExecutionResult
+        self, artefacts, pattern: Pattern, output: ActionExecutionResult
     ) -> StateChangeSequence:
         """
         Capture the state change for the FTPLoginWithCredentials action.
         """
         discovered_data = self.parse_output(output)
-        changes = self.populate_output_motif(kg, pattern, discovered_data)
+        changes = self.populate_output_motif(pattern, discovered_data)
         return changes

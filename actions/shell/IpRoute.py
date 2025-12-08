@@ -5,7 +5,7 @@ from action_state_interface.action import Action, StateChangeSequence
 from action_state_interface.action_utils import run_command
 from action_state_interface.exec import ActionExecutionResult
 from artefacts.ArtefactManager import ArtefactManager
-from kg_api import Entity, GraphDB, MultiPattern, Pattern, Relationship
+from kg_api import Entity, MultiPattern, Pattern, Relationship
 from kg_api.query import Query
 from Session import SessionManager
 from motifs import ActionInputMotif, ActionOutputMotif, StateChangeOperation
@@ -131,7 +131,7 @@ class IpRoute(Action):
             "discovered_network_addresses": matches
         }
 
-    def populate_output_motif(self, gdb: GraphDB, pattern: Pattern, discovered_data: dict) -> StateChangeSequence:
+    def populate_output_motif(self, pattern: Pattern, discovered_data: dict) -> StateChangeSequence:
         """
         Populate the output motif for IpRoute.
         """
@@ -150,11 +150,11 @@ class IpRoute(Action):
         return changes
 
     def capture_state_change(
-        self, gdb: GraphDB, artefacts: ArtefactManager, pattern: Pattern, output: ActionExecutionResult
+        self, artefacts: ArtefactManager, pattern: Pattern, output: ActionExecutionResult
     ) -> StateChangeSequence:
         """
         Read the target subnet from an environment variable instead of from the IP route tables.
         """
         discovered_data = self.parse_output(output)
-        changes = self.populate_output_motif(gdb, pattern, discovered_data)
+        changes = self.populate_output_motif(pattern, discovered_data)
         return changes
