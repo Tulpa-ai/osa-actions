@@ -48,8 +48,9 @@ class HttpGobuster(Action):
         get_target_patterns check looking for HTTP services, drives and directories.
         """
         asset = Entity('Asset', alias='asset')
+        port = Entity('OpenPort', alias='port')
         service = Entity('Service', alias='service', protocol='http')
-        pattern = asset.directed_path_to(service)
+        pattern = asset.points_to(port).points_to(service)
         query = Query()
         query.match(pattern)
         query.ret_all()
@@ -61,9 +62,14 @@ class HttpGobuster(Action):
         Save output to a file.
         """
         ip = pattern.get('asset').get('ip_address')
+        portnum = pattern.get('port').get('number')
         uuid = artefacts.placeholder('gobuster-dir-scan-output.txt')
         out_path = artefacts.get_path(uuid)
-        gobuster_report = cmd_discover_webapp_files_and_folders(url=f"http://{ip}", output=out_path)
+        if portnum:
+            url = f"http://{ip}:{portnum}"
+        else:
+            url = f"http://{ip}"
+        gobuster_report = cmd_discover_webapp_files_and_folders(url=url, output=out_path)
         return gobuster_report
 
     def capture_state_change(
