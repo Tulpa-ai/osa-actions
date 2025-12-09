@@ -65,8 +65,9 @@ class HttpGobuster(Action):
         portnum = pattern.get('port').get('number')
         uuid = artefacts.placeholder('gobuster-dir-scan-output.txt')
         out_path = artefacts.get_path(uuid)
-        url = f"http://{ip}:{portnum}"
-        if not portnum:
+        if portnum:
+            url = f"http://{ip}:{portnum}"
+        else:
             url = f"http://{ip}"
         gobuster_report = cmd_discover_webapp_files_and_folders(url=url, output=out_path)
         return gobuster_report
