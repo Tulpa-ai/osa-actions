@@ -144,7 +144,6 @@ class BusyBoxGTFO(Action):
         return {
             "old_session_active": False,
             "busybox_session_active": True,
-            "discovered_session": output.session,
         }
 
     def populate_output_motif(
@@ -214,7 +213,7 @@ class BusyBoxGTFO(Action):
             ],
             username=as_user,
             active=discovered_data["busybox_session_active"],
-            id=discovered_data["discovered_session"],
+            id=old_session.get("id"),
         )
         changes.append(busybox_session)
 
