@@ -173,7 +173,7 @@ class ObtainShellOnExistingSession(Action):
             ],
             active=discovered_data['shell_session_active'],
             protocol='shell',
-            id=updated_session_entity.get('id'),
+            id=old_session.get('id'),
         )
         changes.append(shell_session_change)
         return changes

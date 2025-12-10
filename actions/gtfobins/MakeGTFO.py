@@ -148,6 +148,7 @@ class MakeGTFO(Action):
         return {
             "old_session_active": False,
             "root_session_active": True,
+            "discovered_session": output.session,
         }
 
     def populate_output_motif(
@@ -214,6 +215,7 @@ class MakeGTFO(Action):
                 ),  # old_session -[spawned]-> root_session
             ],
             active=discovered_data["root_session_active"],
+            id=discovered_data["discovered_session"],
         )
         changes.append(root_session)
 
