@@ -9,7 +9,7 @@ from action_state_interface.action_utils import get_attack_ips, get_non_attack_i
 from action_state_interface.exec import ActionExecutionResult
 from artefacts.ArtefactManager import ArtefactManager
 from networking import is_ipv4_or_cidr
-from kg_api import Entity, Pattern, Relationship, MultiPattern
+from kg_api import Entity, Pattern
 from kg_api.query import Query
 from Session import SessionManager
 from motifs import ActionInputMotif, ActionOutputMotif

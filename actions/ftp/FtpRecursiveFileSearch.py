@@ -4,7 +4,7 @@ from typing import Union
 from ftplib import FTP, error_perm
 from fuzzywuzzy import fuzz
 from action_state_interface.action import Action, StateChangeSequence
-from kg_api import Entity, MultiPattern, Pattern, Relationship
+from kg_api import Entity, Pattern
 from kg_api.query import Query
 from Session import SessionManager
 from motifs import ActionInputMotif, ActionOutputMotif
@@ -185,7 +185,7 @@ class FtpRecursiveFileSearch(Action):
         discovered_files = []
         for filename in output:
             path_list = [f for f in filename.split('/') if len(f) > 0]
-            file_name = path_list.pop()
+            filename = path_list.pop()
             
             directory_list = []
             for index, path in enumerate(path_list):
@@ -195,7 +195,7 @@ class FtpRecursiveFileSearch(Action):
                 })
 
             discovered_files.append({
-                'filename': file_name,
+                'filename': filename,
                 'path': path_list,
                 'directory_list': directory_list,
             })

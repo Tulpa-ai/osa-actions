@@ -7,10 +7,10 @@ from action_state_interface.action import Action, StateChangeSequence
 from action_state_interface.action_utils import run_command
 from builtin_actions.ftp.FtpRecursiveFileSearch import filter_files_by_wordlist  # isort:skip
 from artefacts.ArtefactManager import ArtefactManager
-from kg_api import Entity, MultiPattern, Pattern, Relationship
+from kg_api import Entity, Pattern
 from kg_api.query import Query
 from Session import SessionManager
-from motifs import ActionInputMotif, ActionOutputMotif, StateChangeOperation
+from motifs import ActionInputMotif, ActionOutputMotif
 
 
 def sanitize_alias(name: str) -> str:
@@ -173,7 +173,6 @@ class LocalRecursiveFileSearch(Action):
         """
         query = self.input_motif.get_query()
         query.where(self.input_motif.get_template('existing_credentials').entity.username == self.input_motif.get_template('existing_session').entity.username)
-        # query.where(pattern.get('credentials').username == pattern.get('session').username)
         query.ret_all()
         return query
 
@@ -255,7 +254,6 @@ class LocalRecursiveFileSearch(Action):
             all_aliases.add(full_alias)
             current_directory_pattern = drive_pattern
             for directory_dict in file_dict['directory_list']:
-                # index = directory_dict['index']
                 dirname = directory_dict['dirname']
                 sanitized_dirname = sanitize_alias(dirname)
                 full_alias += f'_{sanitized_dirname}'

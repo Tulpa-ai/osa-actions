@@ -4,7 +4,7 @@ from action_state_interface.action import Action, StateChangeSequence
 from action_state_interface.action_utils import shell
 from action_state_interface.exec import ActionExecutionError, ActionExecutionResult
 from artefacts.ArtefactManager import ArtefactManager
-from kg_api import Entity, MultiPattern, Pattern, Relationship
+from kg_api import Entity, Pattern
 from kg_api.query import Query
 from Session import SessionManager
 from motifs import ActionInputMotif, ActionOutputMotif

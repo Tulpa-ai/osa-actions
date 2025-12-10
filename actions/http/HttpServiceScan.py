@@ -94,7 +94,7 @@ class HttpServiceScan(Action):
         return {}
 
     def populate_output_motif(
-        self, parsed_output: dict[str, Any], pattern: Union[Pattern, MultiPattern]
+        self, discovered_data: dict[str, Any], pattern: Union[Pattern, MultiPattern]
     ) -> StateChangeSequence:
         """
         Placeholder implementation for actions not using the new architecture.

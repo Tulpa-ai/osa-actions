@@ -2,7 +2,7 @@ from ftplib import FTP
 from typing import Union
 from action_state_interface.action import Action, StateChangeSequence
 from action_state_interface.exec import ActionExecutionResult
-from kg_api import Entity, MultiPattern, Pattern, Relationship
+from kg_api import Entity, Pattern
 from kg_api.query import Query
 from Session import SessionManager
 from motifs import ActionInputMotif, ActionOutputMotif
@@ -89,7 +89,7 @@ class FTPAnonymousLogin(Action):
         )
         return ActionExecutionResult(command=["AUTH", username], session=sess_id)
 
-    def populate_output_motif(self, pattern: Pattern, discovered_data: dict) -> None:
+    def populate_output_motif(self, pattern: Pattern, discovered_data: dict) -> StateChangeSequence:
         """
         Populate the output motif for FTPAnonymousLogin.
         """

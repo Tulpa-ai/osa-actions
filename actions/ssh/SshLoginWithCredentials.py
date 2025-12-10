@@ -5,10 +5,10 @@ import paramiko
 from action_state_interface.action import Action, StateChangeSequence
 from action_state_interface.exec import ActionExecutionResult
 from artefacts.ArtefactManager import ArtefactManager
-from kg_api import Entity, MultiPattern, Pattern, Relationship
+from kg_api import Entity, Pattern
 from kg_api.query import Query
 from Session import SessionManager
-from motifs import ActionInputMotif, ActionOutputMotif, StateChangeOperation
+from motifs import ActionInputMotif, ActionOutputMotif
 
 
 def get_ssh_terminal(ip: str, username: str, key_filename: str = None, password: str = None):

@@ -2,7 +2,7 @@ import os
 from typing import Any, Union
 from action_state_interface.action import Action, StateChangeSequence
 from artefacts.ArtefactManager import ArtefactManager
-from kg_api import Ent, Entity, MultiPattern, Pattern, Rel, Relationship
+from kg_api import Entity, Pattern
 from kg_api.query import Query
 from motifs import ActionInputMotif, ActionOutputMotif, StateChangeOperation
 
