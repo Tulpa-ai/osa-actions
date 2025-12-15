@@ -1,5 +1,5 @@
 import re
-from typing import Union
+from typing import Any, Union
 
 from action_state_interface.action import Action, StateChangeSequence
 from action_state_interface.action_utils import shell
@@ -85,3 +85,17 @@ class SMBShareEnumeration(Action):
                 )
                 changes.append((asset_and_new_drive_multipattern, "merge", service_to_drive_pattern))
         return changes
+
+    def parse_output(self, output: ActionExecutionResult) -> dict[str, Any]:
+        """
+        Placeholder implementation for actions not using the new architecture.
+        """
+        return {}
+
+    def populate_output_motif(
+        self, discovered_data: dict[str, Any], pattern: Union[Pattern, MultiPattern]
+    ) -> StateChangeSequence:
+        """
+        Placeholder implementation for actions not using the new architecture.
+        """
+        return []

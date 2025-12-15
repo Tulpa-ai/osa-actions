@@ -3,9 +3,11 @@ from pathlib import Path
 from ftplib import FTP, error_perm
 from action_state_interface.action import Action, StateChangeSequence
 from action_state_interface.exec import ActionExecutionError, ActionExecutionResult
-from kg_api import Entity, GraphDB , Pattern, Relationship
+from artefacts.ArtefactManager import ArtefactManager
+from kg_api import Entity, Pattern
 from kg_api.query import Query
 from Session import SessionManager
+from motifs import ActionInputMotif, ActionOutputMotif, StateChangeOperation
 
 def download_file(ftp, remote_file_path, local_file_path):
     items = []
@@ -24,34 +26,91 @@ class FtpDownloadFile(Action):
         super().__init__("FtpDownloadFile", "T1083", "TA0007", ["quiet", "fast"])
         self.noise = 0.2
         self.impact = 0.8
+        self.input_motif = self.build_input_motif()
+        self.output_motif = self.build_output_motif()
+
+    @classmethod
+    def build_input_motif(cls) -> ActionInputMotif:
+        """
+        Build the input motif for FtpDownloadFile.
+        """
+        input_motif = ActionInputMotif(
+            name="InputMotif_FtpDownloadFile",
+            description="Input motif for FtpDownloadFile"
+        )
+
+        input_motif.add_template(
+            template_name="existing_asset",
+            entity=Entity('Asset', alias='asset'),
+        )
+
+        input_motif.add_template(
+            template_name="existing_port",
+            entity=Entity('OpenPort', alias='port'),
+            match_on="existing_asset",
+            relationship_type="has",
+            invert_relationship=True,
+        )
+
+        input_motif.add_template(
+            template_name="existing_service",
+            entity=Entity('Service', alias='service', protocol='ftp'),
+            match_on="existing_port",
+            relationship_type="is_running",
+            invert_relationship=True,
+        )
+
+        input_motif.add_template(
+            template_name="existing_drive",
+            entity=Entity('Drive', alias='drive'),
+            match_on="existing_service",
+            relationship_type="accesses",
+            invert_relationship=True,
+        )
+
+        input_motif.add_template(
+            template_name="existing_file",
+            entity=Entity('File', alias='file', filename='id_rsa'),
+            match_on="existing_drive",
+            relationship_type="directed_path",
+            pattern_alias='path_to_file',
+        )
+
+        input_motif.add_template(
+            template_name="existing_session",
+            entity=Entity('Session', alias='session', protocol='ftp'),
+            match_on="existing_service",
+            relationship_type="executes_on"
+        )
+
+        return input_motif
+
+    @classmethod
+    def build_output_motif(cls) -> ActionOutputMotif:
+        """
+        Build the output motif for FtpDownloadFile.
+        """
+        output_motif = ActionOutputMotif(
+            name="OutputMotif_FtpDownloadFile",
+            description="Output motif for FtpDownloadFile"
+        )
+        output_motif.add_template(
+            template_name="downloaded_file",
+            entity=Entity('File', alias='file', filename='id_rsa'),
+            expected_attributes=["artefact_id"],
+            operation=StateChangeOperation.UPDATE
+        )
+        return output_motif
 
     def expected_outcome(self, pattern: Pattern) -> list[str]:
-        filename = pattern.get('path')[-1].get('filename')
+        filename = pattern.get('path_to_file')[-1].get('filename')
         ip = pattern.get('asset').get('ip_address')
         session = pattern.get('session')._id
         service = pattern.get('service')._id
         return [f"Download file {filename} from FTP service ({service}) on {ip} using session ({session})"]
 
     def get_target_query(self) -> Query:
-        session = Entity('Session', alias='session', protocol='ftp')
-        asset = Entity('Asset', alias='asset')
-        service = Entity('Service', alias='service', protocol='ftp')
-        drive = Entity('Drive', alias='drive')
-        session_service_pattern = session.with_edge(Relationship('executes_on', direction='r')).with_node(service)
-        service_pattern = (
-            asset.with_edge(Relationship('has'))
-            .with_node(Entity('OpenPort', alias='openport'))
-            .with_edge(Relationship('is_running'))
-            .with_node(service)
-            .connects_to(drive)
-        )
-        # Placeholder for a more intelligent approach to file download selection
-        file_pattern = drive.directed_path_to(Entity('File', alias='file', filename='id_rsa'))
-        file_pattern.set_alias('path')
-
-        match_pattern = service_pattern.combine(file_pattern).combine(session_service_pattern)  
-        query = Query()
-        query.match(match_pattern)
+        query = self.input_motif.get_query()
         query.ret_all()
         return query
 
@@ -62,7 +121,7 @@ class FtpDownloadFile(Action):
         hostname = ftp_connection_details["host"]
         username = ftp_connection_details["username"]
         password = ftp_connection_details["password"]
-        path_pattern: Pattern = pattern.get('path')
+        path_pattern: Pattern = pattern.get('path_to_file')
         ftp_path = Path('/')
         for g_obj in path_pattern:
             if g_obj.type == 'Directory':
@@ -81,16 +140,36 @@ class FtpDownloadFile(Action):
             command=["GET", f"{ftp_path}"], session=session_id, artefacts={"downloaded_file_id": uuid}
         )
 
-    def capture_state_change(
-        self, kg: GraphDB, artefacts, pattern: Pattern, output: ActionExecutionResult
-    ) -> StateChangeSequence:
+    def populate_output_motif(self, pattern: Pattern, discovered_data: dict) -> StateChangeSequence:
+        """
+        Populate the output motif for FtpDownloadFile.
+        """
+        self.output_motif.reset_context()
         changes: StateChangeSequence = []
-        service_pattern = pattern[0]
-        file_pattern = pattern.get('path')
-        file_pattern[-1].alias = 'file'
-        match_pattern = service_pattern.combine(file_pattern)
-        file = file_pattern[-1].copy()
-        file.alias = 'file'
-        file.set('artefact_id', output.artefacts.get("downloaded_file_id"))
-        changes.append((match_pattern, 'update', file))
+
+        file_from_pattern = pattern.get('path_to_file')[-1]
+        file_from_pattern.alias = 'file'
+        changes.append(
+            self.output_motif.instantiate(
+                template_name="downloaded_file",
+                match_on_override=file_from_pattern,
+                artefact_id=discovered_data["downloaded_file_id"]
+            )
+        )
+        return changes
+
+
+    def parse_output(self, output: ActionExecutionResult, artefacts: ArtefactManager) -> dict:
+        """
+        Parse the output of the FtpDownloadFile.
+        """
+        return {
+            "downloaded_file_id": output.artefacts.get("downloaded_file_id")
+        }
+
+    def capture_state_change(
+        self, artefacts: ArtefactManager, pattern: Pattern, output: ActionExecutionResult
+    ) -> StateChangeSequence:
+        discovered_data = self.parse_output(output, artefacts)
+        changes = self.populate_output_motif(pattern, discovered_data)
         return changes

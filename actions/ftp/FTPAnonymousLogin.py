@@ -2,7 +2,7 @@ from ftplib import FTP
 from typing import Union
 from action_state_interface.action import Action, StateChangeSequence
 from action_state_interface.exec import ActionExecutionResult
-from kg_api import Entity, GraphDB, MultiPattern, Pattern, Relationship
+from kg_api import Entity, Pattern
 from kg_api.query import Query
 from Session import SessionManager
 from motifs import ActionInputMotif, ActionOutputMotif
@@ -73,6 +73,11 @@ class FTPAnonymousLogin(Action):
             f"Gain a session on FTP service ({pattern.get('service')._id}) on {pattern.get('asset').get('ip_address')}"
         ]
 
+    def get_target_query(self) -> Query:
+        query = self.input_motif.get_query()
+        query.ret_all()
+        return query
+
     def function(self, sessions: SessionManager, artefacts, pattern: Pattern) -> ActionExecutionResult:
         asset = pattern.get('asset')
         ip_address = asset.get('ip_address')
@@ -84,7 +89,7 @@ class FTPAnonymousLogin(Action):
         )
         return ActionExecutionResult(command=["AUTH", username], session=sess_id)
 
-    def populate_output_motif(self, gdb: GraphDB, pattern: Pattern, discovered_data: dict) -> None:
+    def populate_output_motif(self, pattern: Pattern, discovered_data: dict) -> StateChangeSequence:
         """
         Populate the output motif for FTPAnonymousLogin.
         """
@@ -109,8 +114,8 @@ class FTPAnonymousLogin(Action):
         }
 
     def capture_state_change(
-        self, gdb: GraphDB, artefacts, pattern: Pattern, output: ActionExecutionResult
+        self, artefacts, pattern: Pattern, output: ActionExecutionResult
     ) -> StateChangeSequence:
         discovered_data = self.parse_output(output)
-        changes = self.populate_output_motif(gdb, pattern, discovered_data)
+        changes = self.populate_output_motif(pattern, discovered_data)
         return changes

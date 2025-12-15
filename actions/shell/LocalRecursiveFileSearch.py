@@ -1,15 +1,24 @@
 from typing import Any, Union
 
 import paramiko
+import re
 
 from action_state_interface.action import Action, StateChangeSequence
 from action_state_interface.action_utils import run_command
 from builtin_actions.ftp.FtpRecursiveFileSearch import filter_files_by_wordlist  # isort:skip
 from artefacts.ArtefactManager import ArtefactManager
-from kg_api import Entity, GraphDB, MultiPattern, Pattern, Relationship
+from kg_api import Entity, Pattern
 from kg_api.query import Query
 from Session import SessionManager
+from motifs import ActionInputMotif, ActionOutputMotif
 
+
+def sanitize_alias(name: str) -> str:
+    """
+    Sanitize a name to be used as a Cypher identifier alias.
+    Replaces invalid characters (dots, hyphens, spaces, etc.) with underscores.
+    """
+    return re.sub(r'[^a-zA-Z0-9_]', '_', name)
 
 def list_files(ssh_client: paramiko.SSHClient, start_path: str = "/"):
     """Recursively searches for files on a remote system via an SSH session.
@@ -47,6 +56,90 @@ class LocalRecursiveFileSearch(Action):
         )
         self.noise = 1
         self.impact = 0.3
+        self.input_motif = self.build_input_motif()
+        self.output_motif = self.build_output_motif()
+
+    @classmethod
+    def build_input_motif(cls) -> ActionInputMotif:
+        """
+        Build the input motif for LocalRecursiveFileSearch.
+        """
+        input_motif = ActionInputMotif(
+            name="InputMotif_LocalRecursiveFileSearch",
+            description="Input motif for LocalRecursiveFileSearch"
+        )
+
+        input_motif.add_template(
+            entity=Entity('Asset', alias='asset'),
+            template_name="existing_asset",
+        )
+
+        input_motif.add_template(
+            entity=Entity('OpenPort', alias='port'),
+            template_name="existing_port",
+            relationship_type="has",
+            match_on="existing_asset",
+            invert_relationship=True,
+        )
+
+        input_motif.add_template(
+            entity=Entity('Service', alias='service', protocol='ssh'),
+            template_name="existing_service",
+            relationship_type="is_running",
+            match_on="existing_port",
+            invert_relationship=True,
+        )
+
+        input_motif.add_template(
+            entity=Entity('Credentials', alias='credentials'),
+            template_name="existing_credentials",
+            relationship_type="secured_with",
+            match_on="existing_service",
+        )
+
+        input_motif.add_template(
+            entity=Entity('Session', alias='session', protocol='ssh', active=True),
+            template_name="existing_session",
+        )
+
+        return input_motif
+
+    @classmethod
+    def build_output_motif(cls) -> ActionOutputMotif:
+        """
+        Build the output motif for LocalRecursiveFileSearch.
+        """
+        output_motif = ActionOutputMotif(
+            name="OutputMotif_LocalRecursiveFileSearch",
+            description="Output motif for LocalRecursiveFileSearch"
+        )
+
+        output_motif.add_template(
+            template_name="discovered_drive",
+            entity=Entity('Drive', alias='drive'),
+            relationship_type="accesses",
+            match_on=Entity('Asset', alias='asset'),
+            invert_relationship=True,
+            expected_attributes=["location"],
+        )
+
+        output_motif.add_template(
+            template_name="discovered_directory",
+            entity=Entity('Directory', alias='directory'),
+            relationship_type="has",
+            match_on="discovered_drive",
+            invert_relationship=True,
+        )
+
+        output_motif.add_template(
+            template_name="discovered_file",
+            entity=Entity('File', alias='file'),
+            relationship_type="has",
+            match_on="discovered_directory",
+            invert_relationship=True,
+        )
+
+        return output_motif
 
     def expected_outcome(self, pattern: Pattern) -> list[str]:
         """
@@ -78,19 +171,8 @@ class LocalRecursiveFileSearch(Action):
         Returns:
             list[Union[Pattern, MultiPattern]]: A list of patterns representing target locations.
         """
-        session = Entity('Session', alias='session', protocol='ssh', active=True)
-        asset = Entity('Asset', alias='asset')
-        service = Entity('Service', alias='service', protocol='ssh')
-        credentials = Entity('Credentials', alias='credentials')
-        match_pattern = (
-            asset.directed_path_to(service)
-            .with_edge(Relationship('secured_with', direction='l'))
-            .with_node(credentials)
-            .combine(session)
-        )
-        query = Query()
-        query.match(match_pattern)
-        query.where(credentials.username == session.username)
+        query = self.input_motif.get_query()
+        query.where(self.input_motif.get_template('existing_credentials').entity.username == self.input_motif.get_template('existing_session').entity.username)
         query.ret_all()
         return query
 
@@ -124,8 +206,81 @@ class LocalRecursiveFileSearch(Action):
                 f.write(file.encode("utf-8") + b'\n')
         return interesting_files
 
+    def parse_output(self, output: Any) -> dict:
+        """
+        Parse the output of the action.
+        """
+        if len(output) == 0:
+            return {}
+
+        discovered_files = []
+        for filename in output:
+            path_list = [f for f in filename.split('/') if len(f) > 0]
+            filename = path_list.pop()
+            
+            directory_list = []
+            for index, path in enumerate(path_list):
+                directory_list.append({
+                    'dirname': path,
+                    'index': index
+                })
+
+            discovered_files.append({
+                'filename': filename,
+                'path': path_list,
+                'directory_list': directory_list,
+            })
+        return discovered_files
+                
+
+    def populate_output_motif(self, pattern: Pattern, discovered_data: dict) -> StateChangeSequence:
+        """
+        Populate the output motif with the discovered data.
+        """
+        self.output_motif.reset_context()
+        changes: StateChangeSequence = []
+
+        drive_change = self.output_motif.instantiate(
+            template_name="discovered_drive",
+            match_on_override=pattern.get('asset'),
+            location=f"{pattern.get('asset').get('ip_address')}/"
+        )
+        changes.append(drive_change)
+        drive_pattern = drive_change[2][-1]
+        all_aliases = set()
+
+        for file_dict in discovered_data:
+            full_alias = 'drive'
+            all_aliases.add(full_alias)
+            current_directory_pattern = drive_pattern
+            for directory_dict in file_dict['directory_list']:
+                dirname = directory_dict['dirname']
+                sanitized_dirname = sanitize_alias(dirname)
+                full_alias += f'_{sanitized_dirname}'
+
+                directory_change = self.output_motif.instantiate(
+                    template_name="discovered_directory",
+                    alias=full_alias,
+                    match_on_override=current_directory_pattern,
+                    dirname=dirname
+                )
+                if full_alias not in all_aliases:
+                    all_aliases.add(full_alias)
+                    changes.append(directory_change)
+
+                current_directory_pattern = directory_change[2][-1]
+
+            file_change = self.output_motif.instantiate(
+                template_name="discovered_file",
+                match_on_override=current_directory_pattern,
+                filename=file_dict['filename']
+            )
+            changes.append(file_change)
+        
+        return changes
+
     def capture_state_change(
-        self, kg: GraphDB, artefacts: ArtefactManager, pattern: Pattern, output: Any
+        self, artefacts: ArtefactManager, pattern: Pattern, output: Any
     ) -> StateChangeSequence:
         """
         Update the knowledge graph with discovered files.
@@ -134,7 +289,6 @@ class LocalRecursiveFileSearch(Action):
         the asset and its directory structure.
 
         Args:
-            kg (GraphDB): The knowledge graph to update.
             artefacts (ArtefactManager): Manages stored artefacts.
             pattern (Pattern): The pattern containing asset details.
             output (Any): The list of discovered files.
@@ -142,38 +296,6 @@ class LocalRecursiveFileSearch(Action):
         Returns:
             StateChangeSequence: A sequence of state changes to be applied to the knowledge graph.
         """
-
-        changes: StateChangeSequence = []
-
-        if len(output) == 0:
-            return changes
-
-        asset: Entity = pattern.get('asset')
-        ip_address = asset.get('ip_address')
-
-        drive = Entity('Drive', alias='drive', location=f'{ip_address}/')
-        asset_drive_pattern = asset.with_edge(Relationship('accesses', direction='r')).with_node(drive)
-        changes.append((asset, 'merge_if_not_match', asset_drive_pattern))
-
-        for filename in output:
-            path_list = [f for f in filename.split('/') if len(f) > 0]
-            filename = path_list.pop()
-
-            match_pattern = asset_drive_pattern
-            merge_pattern = drive
-
-            n = 0
-            for path in path_list:
-                directory = Entity('Directory', alias=f'directory{n}', dirname=path)
-                merge_pattern = merge_pattern.with_edge(Relationship('has', direction='r')).with_node(directory)
-                changes.append((match_pattern, "merge_if_not_match", merge_pattern))
-                match_pattern = match_pattern.with_edge(Relationship('has', direction='r')).with_node(directory)
-                merge_pattern = directory
-                n += 1
-
-            merge_pattern = merge_pattern.with_edge(Relationship('has', direction='r')).with_node(
-                Entity(type='File', filename=filename)
-            )
-            changes.append((match_pattern, "merge_if_not_match", merge_pattern))
-
+        discovered_data = self.parse_output(output)
+        changes = self.populate_output_motif(pattern, discovered_data)
         return changes

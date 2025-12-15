@@ -9,7 +9,7 @@ from action_state_interface.action_utils import get_attack_ips, get_non_attack_i
 from networking import is_ipv4_or_cidr
 from action_state_interface.exec import ActionExecutionResult
 from artefacts.ArtefactManager import ArtefactManager
-from kg_api import Entity, GraphDB, Pattern, Relationship, MultiPattern
+from kg_api import Entity, Pattern
 from kg_api.query import Query
 from Session import SessionManager
 from motifs import ActionInputMotif, ActionOutputMotif
@@ -152,7 +152,7 @@ class SlowNmapScan(Action):
         return dict(results)
 
     def populate_output_motif(
-        self, gdb: GraphDB, pattern: Pattern, discovered_data: dict[str, list[str]]
+        self, pattern: Pattern, discovered_data: dict[str, list[str]]
     ) -> StateChangeSequence:
         """
         Create state changes from parsed NMAP data using output motif templates.
@@ -165,7 +165,6 @@ class SlowNmapScan(Action):
         - Return the list of state changes
         
         Args:
-            gdb: GraphDB instance for checking existing entities
             pattern: Pattern containing the subnet entity
             discovered_data: Dictionary mapping IP addresses to lists of open ports
             
@@ -195,7 +194,7 @@ class SlowNmapScan(Action):
         return changes
 
     def capture_state_change(
-        self, gdb: GraphDB, artefacts: ArtefactManager, pattern: Pattern, output: ActionExecutionResult
+        self, artefacts: ArtefactManager, pattern: Pattern, output: ActionExecutionResult
     ) -> StateChangeSequence:
         """
         Add Asset entities and OpenPort entities to knowledge graph.
@@ -203,5 +202,5 @@ class SlowNmapScan(Action):
         - Create state changes from the parsed data
         """
         discovered_data = self.parse_output(output)
-        changes = self.populate_output_motif(gdb, pattern, discovered_data)
+        changes = self.populate_output_motif(pattern, discovered_data)
         return changes
