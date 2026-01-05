@@ -5,7 +5,7 @@ import yaml
 
 def get_actions() -> list:
 
-    directory = Path("path/to/your/directory")
+    directory = Path("actions/atomic_red_team/atomics")
     yaml_files = list(directory.glob("*.yml")) + list(directory.glob("*.yaml"))
 
     actions = []
@@ -15,8 +15,13 @@ def get_actions() -> list:
         with file.open("r") as f:
             action_info = yaml.safe_load(f)
 
-        actions.append(
-            ExploitAction(action_info)
-        )
+        for test in action_info['atomic_tests']:
+            actions.append(
+                ExploitAction(
+                    test,
+                    action_info.get('display_name', ''),
+                    action_info.get('attack_technique', '')
+                )
+            )
 
     return actions
