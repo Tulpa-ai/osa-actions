@@ -47,10 +47,24 @@ def extract_process_names(file_content: str) -> set[str]:
 
 class ShProcessDiscovery(Action):
     """
-    Run make command as root.
+    Discover running processes on a target system using shell commands.
+
+    This action executes `ps` and `ps aux` on a live session to enumerate
+    running processes, stores the output as an artefact, parses the results,
+    and records discovered processes in the state graph.
+
+    MITRE ATT&CK:
+        - Technique: T1057 (Process Discovery)
+        - Tactic: TA0004 (Discovery)
     """
 
     def __init__(self):
+        """
+        Initialise the process discovery action.
+
+        Sets metadata such as noise and impact scores, and builds the
+        input and output motifs required for execution and state updates.
+        """
         super().__init__("ShProcessDiscovery", "T1057", "TA0004", ["quiet", "fast"])
         self.noise = 0.5
         self.impact = 0.8
@@ -60,7 +74,15 @@ class ShProcessDiscovery(Action):
     @classmethod
     def build_input_motif(cls) -> ActionInputMotif:
         """
-        Build the input motif for ShProcessDiscovery.
+        Build the input motif for process discovery.
+
+        The input motif requires:
+            - An existing Service
+            - A Session executing on that Service
+            - A User associated with the Service
+
+        Returns:
+            ActionInputMotif: Configured input motif for this action.
         """
         input_motif = ActionInputMotif(
             name="InputMotif_ShProcessDiscovery",
@@ -91,7 +113,13 @@ class ShProcessDiscovery(Action):
     @classmethod
     def build_output_motif(cls) -> ActionOutputMotif:
         """
-        Build the output motif for ShProcessDiscovery.
+        Build the output motif for process discovery.
+
+        The output motif models newly discovered Process entities
+        associated with an Asset.
+
+        Returns:
+            ActionOutputMotif: Configured output motif for this action.
         """
         asset = Entity('Asset', alias='asset')
         output_motif = ActionOutputMotif(
@@ -109,7 +137,15 @@ class ShProcessDiscovery(Action):
         return output_motif
 
     def expected_outcome(self, pattern: Pattern) -> list[str]:
-        """"""
+        """
+        Describe the expected outcome of this action.
+
+        Args:
+            pattern (Pattern): Matched input pattern for the action.
+
+        Returns:
+            list[str]: Human-readable descriptions of expected state changes.
+        """
         user = pattern.get("user").get("username")
         session = pattern.get("session")._id
         permission = pattern.get("permission")._id
@@ -118,7 +154,12 @@ class ShProcessDiscovery(Action):
         ]
 
     def get_target_query(self) -> Query:
-        """"""
+        """
+        Build the query used to select valid execution targets.
+
+        Returns:
+            Query: Query returning all entities required by the input motif.
+        """
         query = self.input_motif.get_query()
         query.ret_all()
         return query
@@ -129,7 +170,20 @@ class ShProcessDiscovery(Action):
         artefacts: ArtefactManager,
         pattern: MultiPattern,
     ) -> ActionExecutionResult:
-        """"""
+        """
+        Execute process discovery on the target session.
+
+        Runs `ps` and `ps aux` on the live session and writes the combined
+        output to an artefact file.
+
+        Args:
+            sessions (SessionManager): Manager for active sessions.
+            artefacts (ArtefactManager): Manager for artefact storage.
+            pattern (MultiPattern): Matched execution pattern.
+
+        Returns:
+            ActionExecutionResult: Execution metadata and generated artefacts.
+        """
         tulpa_session = pattern.get("session")
         tulpa_session_id = tulpa_session.get("id")
         live_session = sessions.get_session(tulpa_session_id)
@@ -167,7 +221,22 @@ class ShProcessDiscovery(Action):
     def populate_output_motif(
         self, pattern: Pattern, discovered_data: dict
     ) -> StateChangeSequence:
-        """"""
+        """
+        Parse the process discovery output artefact.
+
+        Reads the stored command output and extracts discovered
+        process names.
+
+        Args:
+            output (ActionExecutionResult): Result of action execution.
+            artefacts (ArtefactManager): Artefact manager.
+
+        Returns:
+            dict: Parsed discovery data containing process names.
+
+        Raises:
+            ActionExecutionError: If the expected artefact is missing.
+        """
         self.output_motif.reset_context()
         asset = pattern.get('asset')
         changes: StateChangeSequence = []
@@ -188,6 +257,19 @@ class ShProcessDiscovery(Action):
         pattern: Pattern,
         output: ActionExecutionResult,
     ) -> StateChangeSequence:
+        """
+        Populate the output motif with discovered processes.
+
+        Creates Process entities and associates them with the
+        target Asset.
+
+        Args:
+            pattern (Pattern): Execution pattern.
+            discovered_data (dict): Parsed discovery data.
+
+        Returns:
+            StateChangeSequence: State changes representing discovered processes.
+        """
         discovered_data = self.parse_output(output, artefacts)
         changes = self.populate_output_motif(pattern, discovered_data)
         return changes
