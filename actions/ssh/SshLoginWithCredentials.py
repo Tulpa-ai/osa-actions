@@ -72,11 +72,28 @@ class SshLoginWithCredentials(Action):
             invert_relationship=True,
         )
 
+        # Credentials from any service on the same asset (can be reused from FTP, database, etc.)
+        input_motif.add_template(
+            entity=Entity('OpenPort', alias='cred_port'),
+            template_name="existing_cred_port",
+            relationship_type="has",
+            match_on="existing_asset",
+            invert_relationship=True,
+        )
+
+        input_motif.add_template(
+            entity=Entity('Service', alias='cred_service'),
+            template_name="existing_cred_service",
+            relationship_type="is_running",
+            match_on="existing_cred_port",
+            invert_relationship=True,
+        )
+
         input_motif.add_template(
             entity=Entity("Credentials", alias="credentials"),
             template_name="existing_credentials",
             relationship_type="secured_with",
-            match_on="existing_service",
+            match_on="existing_cred_service",
             expected_attributes=["password"],
         )
 
@@ -84,7 +101,7 @@ class SshLoginWithCredentials(Action):
             entity=Entity("User", alias="user"),
             template_name="existing_user",
             relationship_type="is_client",
-            match_on="existing_service",
+            match_on="existing_cred_service",
         )
 
         return input_motif
@@ -118,14 +135,16 @@ class SshLoginWithCredentials(Action):
         user_id = pattern.get('user')._id
         service = pattern.get('service')._id
         credentials = pattern.get('credentials')._id
+        cred_service = pattern.get('cred_service')
+        cred_service_protocol = cred_service.get('protocol') if cred_service else 'unknown'
         return [
-            f"Gain access to {ip} as {user} ({user_id}) using credentials ({credentials}) via SSH service ({service})"
+            f"Gain access to {ip} as {user} ({user_id}) using credentials ({credentials}) from {cred_service_protocol} service via SSH service ({service})"
         ]
 
     def get_target_query(self) -> Query:
         """
-        get_target_patterns check to identify SSH service entities, and derive login
-        credentials from directory names and id files.
+        Get target patterns for SSH login with credentials from any service.
+        Works with credentials from any service (FTP, MySQL, SSH itself, etc.).
         """
         query = self.input_motif.get_query()
         query.where(
