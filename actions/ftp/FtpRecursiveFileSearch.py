@@ -239,6 +239,7 @@ class FtpRecursiveFileSearch(Action):
                 template_name="discovered_file",
                 match_on_override=current_directory_pattern,
                 filename=file_dict['filename'],
+                active=True,
             )
             changes.append(file_change)
         return changes
