@@ -125,7 +125,6 @@ class PasswordlessSudoCheck(Action):
         session = pattern.get('session')
         service = pattern.get('service')
         username = session.get('username')
-        
         user = Entity('User', alias='user', username=username)
         match_on_override = service.with_edge(Relationship('is_client', direction='l')).with_node(user)
 
