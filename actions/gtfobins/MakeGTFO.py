@@ -97,8 +97,9 @@ class MakeGTFO(Action):
         user = pattern.get("user").get("username")
         session = pattern.get("session")._id
         permission = pattern.get("permission")._id
+        as_user = pattern.get("permission").get("as_user")
         return [
-            f"Change user to {user} in session ({session}) with permission ({permission})"
+            f"Change user from {user} to {as_user} in session ({session}) with permission ({permission})"
         ]
 
     def get_target_query(self) -> Query:
