@@ -4,7 +4,7 @@ from action_state_interface.action import Action, StateChangeSequence
 from action_state_interface.action_utils import run_command
 from action_state_interface.exec import ActionExecutionResult
 from artefacts.ArtefactManager import ArtefactManager
-from kg_api import Entity, Pattern
+from kg_api import Entity, Pattern, Relationship
 from kg_api.query import Query
 from Session import SessionManager
 from motifs import ActionInputMotif, ActionOutputMotif, StateChangeOperation
@@ -34,9 +34,15 @@ class PasswordlessSudoCheck(Action):
             description="Input motif for PasswordlessSudoCheck"
         )
         input_motif.add_template(
+            entity=Entity('Service', alias='service'),
+            template_name="existing_service",
+        )
+        input_motif.add_template(
             entity=Entity('Session', alias='session', active=True),
             template_name="existing_session",
             null_attributes=["listed_sudo_permissions"],
+            relationship_type="executes_on",
+            match_on="existing_service",
         )
         return input_motif
 
@@ -93,7 +99,7 @@ class PasswordlessSudoCheck(Action):
         output = live_session.run_command("sudo -l")
         return ActionExecutionResult(command=["sudo -l"], stdout=output, session=tulpa_session_id)
 
-    def parse_output(self, output: ActionExecutionResult) -> dict:
+    def parse_output(self, output: ActionExecutionResult) -> list:
         """
         Parse the output of the action.
         """
@@ -109,7 +115,7 @@ class PasswordlessSudoCheck(Action):
                 })
         return discovered_permissions
 
-    def populate_output_motif(self, pattern: Pattern, discovered_data: dict) -> StateChangeSequence:
+    def populate_output_motif(self, pattern: Pattern, discovered_data: list) -> StateChangeSequence:
         """
         Populate the output motif with the discovered data.
         """
@@ -117,12 +123,16 @@ class PasswordlessSudoCheck(Action):
         changes: StateChangeSequence = []
 
         session = pattern.get('session')
+        service = pattern.get('service')
         username = session.get('username')
+        
+        user = Entity('User', alias='user', username=username)
+        match_on_override = service.with_edge(Relationship('is_client', direction='l')).with_node(user)
 
         for discovered_permission in discovered_data:
             changes.append(self.output_motif.instantiate(
                 template_name="discovered_permission",
-                match_on_override=Entity('User', alias='user', username=username),
+                match_on_override=match_on_override,
                 name=discovered_permission['command'],
                 command=discovered_permission['command'],
                 as_user=discovered_permission['sudo_usr']
