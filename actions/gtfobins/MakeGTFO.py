@@ -80,7 +80,7 @@ class MakeGTFO(Action):
             entity=Entity(
                 "Session",
                 alias="root_session",
-                protocol="root",
+                protocol="shell",
                 username="root",
                 active=True,
             ),
@@ -216,6 +216,8 @@ class MakeGTFO(Action):
             ],
             active=discovered_data["root_session_active"],
             id=old_session.get("id"),
+            protocol="shell",
+            username="root",
         )
         changes.append(root_session)
 
