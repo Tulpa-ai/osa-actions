@@ -47,8 +47,8 @@ class AdalancheFetchUsers(Action):
             ActionOutputMotif: the configured output motif with expected attributes.
         """
         output_motif = ActionOutputMotif(
-            name="adalanche_ingest_data_output",
-            description="Template to update the domain",
+            name="adalanche_fetch_users_output",
+            description="Template to create or update User entities discovered from Active Directory",
         )
 
         output_motif.add_template(
