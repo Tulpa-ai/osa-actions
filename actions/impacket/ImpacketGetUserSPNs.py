@@ -61,12 +61,14 @@ class ImpacketGetUserSPNs(Action):
         """
         Build the output motif templates for ImpacketGetUserSPNs.
 
-        Defines templates for:
-        - Discovered assets (linked to subnet via belongs_to relationship)
-        - Open ports (linked to assets via has relationship)
+        Defines a template for:
+        - A File entity representing the kerberoasting hashes output, linked to the
+          corresponding DomainPartition via a `has` relationship (with inverted
+          direction).
 
         Returns:
-            ActionOutputMotif: Output motif with asset and port templates
+            ActionOutputMotif: Output motif containing a File template for the
+            kerberoasting hashes file produced by this action.
         """
         output_motif = ActionOutputMotif(
             name="impacketgetnpusers_output",
