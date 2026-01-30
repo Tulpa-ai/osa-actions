@@ -197,7 +197,6 @@ class ImpacketGetNPUsers(Action):
 
         output_path = str(discovered_data.get("output_path"))
 
-        domain = pattern.get('domain')
         file = self.output_motif.instantiate(
             "discovered_file",
             match_on_override=domain,
