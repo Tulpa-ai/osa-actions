@@ -79,8 +79,11 @@ class CMEUserReconnaissance(Action):
 
     def get_target_query(self) -> Query:
         """
-        Target subnets with network addresses. The action will discover domain controllers
-        on these subnets and link them to ComputerAccount entities if they exist.
+        Build and return the query used to select targets for this action.
+
+        The query is based on the input motif and targets domain controllers,
+        represented as ComputerAccount entities with controller=True that belong
+        to a DomainPartition, for user enumeration with crackmapexec.
         """
         query = self.input_motif.get_query()
         query.ret_all()
