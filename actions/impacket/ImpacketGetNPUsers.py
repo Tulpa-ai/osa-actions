@@ -59,14 +59,14 @@ class ImpacketGetNPUsers(Action):
     @classmethod
     def build_output_motif(cls) -> ActionOutputMotif:
         """
-        Build the output motif templates for FastNmapScan.
+        Build the output motif templates for ImpacketGetNPUsers.
 
         Defines templates for:
-        - Discovered assets (linked to subnet via belongs_to relationship)
-        - Open ports (linked to assets via has relationship)
+        - Files containing fetched password hashes (e.g., AS-REP roast hashes),
+          associated with the corresponding DomainPartition via a has relationship.
 
         Returns:
-            ActionOutputMotif: Output motif with asset and port templates
+            ActionOutputMotif: Output motif with File templates for password hash artefacts
         """
         output_motif = ActionOutputMotif(
             name="impacketgetnpusers_output",
