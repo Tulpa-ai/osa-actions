@@ -149,16 +149,19 @@ class HashcatCrackAsRepHashes(Action):
                 ok_code=[0, 1],
             )
 
-            # Check if the output file was created and has content
+            # Base execution result from the shell command
+            exec_result = ActionExecutionResult(
+                command=command_output.command,
+                stdout=command_output.stdout,
+                stderr=command_output.stderr,
+                exit_status=command_output.exit_status,
+                artefacts=command_output.artefacts if hasattr(command_output, "artefacts") else {},
+            )
+
+            # If the output file was created and has content, force success and record artefact
             if Path(output_path).exists() and Path(output_path).stat().st_size > 0:
-                exec_result = ActionExecutionResult(
-                    command=command_output.command,
-                    stdout=command_output.stdout,
-                    stderr=command_output.stderr,
-                    exit_status=0,  # Force success if output file exists
-                    artefacts=command_output.artefacts if hasattr(command_output, 'artefacts') else {},
-                )
-            exec_result.artefacts["cracked_hashes"] = output_uuid
+                exec_result.exit_status = 0  # Force success if output file exists
+                exec_result.artefacts["cracked_hashes"] = output_uuid
 
         except Exception as e:
             # If shell command fails completely, return error
