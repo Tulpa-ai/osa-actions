@@ -71,7 +71,17 @@ class CMEUserReconnaissance(Action):
 
     def expected_outcome(self, pattern) -> list[str]:
         """
-        Discovers domain controller IP addresses using crackmapexec and updates existing ComputerAccount entities.
+        Describe the expected outcome of running CMEUserReconnaissance for the given pattern.
+
+        Builds a human-readable description of using crackmapexec to discover users on the
+        domain controller identified by the ComputerAccount's IP address in the pattern.
+
+        Args:
+            pattern: A mapping that may contain an 'account' entry representing a ComputerAccount
+                with an 'ip_address' field.
+
+        Returns:
+            list[str]: A list containing a single description of the intended user discovery action.
         """
         account = pattern.get('account')
         ip = account.get('ip_address') if account else 'unknown'
