@@ -35,7 +35,7 @@ class ImpacketMSSQLClient(Action):
         Query for Users entities and their associated ComputerAccounts using creds.
 
         Returns:
-            ActionInputMotif: Input motif requiring related DomainPartition, ComputerAccount (controller=True) and Credentials entities
+            ActionInputMotif: Input motif requiring related DomainPartition, ComputerAccount (controller=False) and Credentials entities
         """
         input_motif = ActionInputMotif(
             name="InputMotif_ImpacketMSSQLClient",
