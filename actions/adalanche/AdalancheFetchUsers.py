@@ -15,7 +15,7 @@ class AdalancheFetchUsers(Action):
     """
 
     def __init__(self):
-        super().__init__("AdalancheFetchUsers", "T1087", "TA007", [])
+        super().__init__("AdalancheFetchUsers", "T1087", "TA0007", [])
 
         self.noise = 0
         self.impact = 0

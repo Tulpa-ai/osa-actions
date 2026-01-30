@@ -56,14 +56,15 @@ class HashcatCrackKerberosHashes(Action):
     @classmethod
     def build_output_motif(cls) -> ActionOutputMotif:
         """
-        Build the output motif templates for FastNmapScan.
+        Build the output motif templates for HashcatCrackKerberosHashes.
 
         Defines templates for:
-        - Discovered assets (linked to subnet via belongs_to relationship)
-        - Open ports (linked to assets via has relationship)
+        - Discovered credentials obtained by cracking Kerberos hashes with Hashcat
+        - Relationships linking credentials to the corresponding domain partition
+          via a secured_with relationship (inverted)
 
         Returns:
-            ActionOutputMotif: Output motif with asset and port templates
+            ActionOutputMotif: Output motif with templates for cracked credentials
         """
         output_motif = ActionOutputMotif(
             name="hashcatcrackkerberoshashes_output",
@@ -147,19 +148,19 @@ class HashcatCrackKerberosHashes(Action):
                 ok_code=[0, 1],
             )
 
-            # Hashcat often returns non-zero exit status even when successful
-            # Check if the output file was created and has content
+            # Base execution result from the shell command
+            exec_result = ActionExecutionResult(
+                command=command_output.command,
+                stdout=command_output.stdout,
+                stderr=command_output.stderr,
+                exit_status=command_output.exit_status,
+                artefacts=command_output.artefacts if hasattr(command_output, "artefacts") else {},
+            )
+
+            # If the output file was created and has content, force success and record artefact
             if Path(output_path).exists() and Path(output_path).stat().st_size > 0:
-                # Create a successful result even if hashcat returned non-zero
-                # ActionExecutionResult(command=command_output.command, stdout=command_output.stdout, stderr=command_output.stderr, exit_status=0, artefacts=command_output.artefacts if hasattr(command_output, 'artefacts') else {})
-                exec_result = ActionExecutionResult(
-                    command=command_output.command,
-                    stdout=command_output.stdout,
-                    stderr=command_output.stderr,
-                    exit_status=0,  # Force success if output file exists
-                    artefacts=command_output.artefacts if hasattr(command_output, 'artefacts') else {},
-                )
-            exec_result.artefacts["cracked_hashes"] = output_uuid
+                exec_result.exit_status = 0  # Force success if output file exists
+                exec_result.artefacts["cracked_hashes"] = output_uuid
 
         except Exception as e:
             # If shell command fails completely, return error
