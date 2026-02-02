@@ -160,10 +160,10 @@ class DeleteFile(Action):
         query.ret_all()
         return query
 
-    def _get_file_path(self, pattern: Pattern, live_session) -> str:
+    def _get_file_path(self, pattern: Pattern) -> str:
         """
-        Construct the full absolute file path from the File entity and its relationships.
-        Always returns an absolute path by resolving relative directories on the remote system.
+        Construct the full file path from the File entity and its relationships.
+        Returns the file path or just the filename if path cannot be determined.
         """
         file_entity = pattern.get('file')
         if not file_entity:
@@ -178,10 +178,8 @@ class DeleteFile(Action):
         if directory:
             dirname = directory.get('dirname')
             if dirname:
-                # Resolve directory to absolute path on remote system (handles relative paths)
-                escaped_dirname = self._escape_path_for_shell(dirname)
-                resolved = live_session.run_command(f'cd "{escaped_dirname}" 2>/dev/null && pwd').strip().split('\n')[-1]
-                dirname = resolved if resolved and resolved.startswith('/') else f'/{dirname.lstrip("/")}'
+                # Use os.path.join for robust path construction
+                # Handles root directory ("/") and other cases correctly
                 return os.path.join(dirname, filename)
         
         # Fallback: return just filename (will need to be found)
@@ -250,7 +248,7 @@ class DeleteFile(Action):
         if not live_session:
             return self._create_error_result("No active session available", tulpa_session_id)
         
-        file_path = self._get_file_path(pattern, live_session)
+        file_path = self._get_file_path(pattern)
         
         if not file_path:
             return self._create_error_result("No file path found", tulpa_session_id)
