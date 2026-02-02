@@ -188,9 +188,12 @@ class FtpRecursiveFileSearch(Action):
             filename = path_list.pop()
             
             directory_list = []
+            # Build cumulative absolute path for each directory level
+            cumulative_path = '/'
             for index, path in enumerate(path_list):
+                cumulative_path = os.path.join(cumulative_path, path)
                 directory_list.append({
-                    'dirname': path,
+                    'dirname': cumulative_path,
                     'index': index
                 })
 
