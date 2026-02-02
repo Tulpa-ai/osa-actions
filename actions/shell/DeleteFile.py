@@ -1,3 +1,5 @@
+import os
+
 from action_state_interface.action import Action, StateChangeSequence
 from action_state_interface.exec import ActionExecutionResult
 from artefacts.ArtefactManager import ArtefactManager
@@ -20,9 +22,9 @@ class DeleteFile(Action):
     
     # Secure deletion tools to try in order
     SECURE_DELETION_TOOLS = [
-        ('shred', 'shred -fuz {path}'),
-        ('wipe', 'wipe -f {path}'),
-        ('srm', 'srm {path}')
+        ('shred', 'shred -fuz "{path}"'),
+        ('wipe', 'wipe -f "{path}"'),
+        ('srm', 'srm "{path}"')
     ]
 
     def __init__(self):
@@ -48,16 +50,34 @@ class DeleteFile(Action):
             description="Input motif for DeleteFile"
         )
 
-        # Asset (required for session)
+        # Asset (required for session and file location)
         input_motif.add_template(
             entity=Entity('Asset', alias='asset'),
             template_name="existing_asset",
+        )
+
+        # Drive entity (ensures file is on the same asset)
+        input_motif.add_template(
+            entity=Entity('Drive', alias='drive'),
+            template_name="existing_drive",
+            relationship_type="directed_path",
+            match_on="existing_asset",
+        )
+
+        # Directory entity (required for file path construction)
+        input_motif.add_template(
+            entity=Entity('Directory', alias='directory'),
+            template_name="existing_directory",
+            relationship_type="directed_path",
+            match_on="existing_drive",
         )
 
         # File entity to delete
         input_motif.add_template(
             entity=Entity('File', alias='file'),
             template_name="existing_file",
+            relationship_type="directed_path",
+            match_on="existing_directory",
         )
 
         # Session from any service on the asset
@@ -158,19 +178,30 @@ class DeleteFile(Action):
         if directory:
             dirname = directory.get('dirname')
             if dirname:
-                # Normalize path - ensure single slash between dir and filename
-                return dirname.rstrip('/') + '/' + filename
+                # Use os.path.join for robust path construction
+                # Handles root directory ("/") and other cases correctly
+                return os.path.join(dirname, filename)
         
         # Fallback: return just filename (will need to be found)
         return filename
+
+    def _escape_path_for_shell(self, file_path: str) -> str:
+        """
+        Escape a file path for safe use in shell commands within double quotes.
+        Escapes backslashes and double quotes.
+        """
+        return file_path.replace('\\', '\\\\').replace('"', '\\"')
 
     def _try_secure_deletion(self, live_session, file_path: str) -> tuple[str, bool]:
         """
         Try secure deletion methods (shred, wipe, srm) in order.
         Returns (command_output, success).
         """
+        # Escape file_path for safe use in shell commands
+        escaped_path = self._escape_path_for_shell(file_path)
         for tool_name, tool_cmd in self.SECURE_DELETION_TOOLS:
-            cmd = f"which {tool_name} >/dev/null 2>&1 && {tool_cmd.format(path=file_path)} 2>/dev/null && echo 'Deleted file: {file_path} (using {tool_name})' || true"
+            # Use escaped path in the tool command
+            cmd = f'which {tool_name} >/dev/null 2>&1 && {tool_cmd.format(path=escaped_path)} 2>/dev/null && echo "Deleted file: {escaped_path} (using {tool_name})" || true'
             output = live_session.run_command(cmd)
             if "Deleted file:" in output:
                 return output, True
@@ -181,7 +212,9 @@ class DeleteFile(Action):
         """
         Perform regular deletion using rm.
         """
-        rm_cmd = f"rm -f {file_path} 2>/dev/null && echo 'Deleted file: {file_path} (using rm)' || echo 'Failed to delete: {file_path}'"
+        # Escape file_path for safe use in shell commands
+        escaped_path = self._escape_path_for_shell(file_path)
+        rm_cmd = f'rm -f "{escaped_path}" 2>/dev/null && echo "Deleted file: {escaped_path} (using rm)" || echo "Failed to delete: {escaped_path}"'
         return live_session.run_command(rm_cmd)
 
     def _create_error_result(self, message: str, session_id: str) -> ActionExecutionResult:
