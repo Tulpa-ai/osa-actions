@@ -160,10 +160,10 @@ class DeleteFile(Action):
         query.ret_all()
         return query
 
-    def _get_file_path(self, pattern: Pattern) -> str:
+    def _get_file_path(self, pattern: Pattern, live_session) -> str:
         """
-        Construct the full file path from the File entity and its relationships.
-        Returns the file path or just the filename if path cannot be determined.
+        Construct the full absolute file path from the File entity and its relationships.
+        Always returns an absolute path by resolving relative directories on the remote system.
         """
         file_entity = pattern.get('file')
         if not file_entity:
@@ -178,8 +178,10 @@ class DeleteFile(Action):
         if directory:
             dirname = directory.get('dirname')
             if dirname:
-                # Use os.path.join for robust path construction
-                # Handles root directory ("/") and other cases correctly
+                # Resolve directory to absolute path on remote system (handles relative paths)
+                escaped_dirname = self._escape_path_for_shell(dirname)
+                resolved = live_session.run_command(f'cd "{escaped_dirname}" 2>/dev/null && pwd').strip().split('\n')[-1]
+                dirname = resolved if resolved and resolved.startswith('/') else f'/{dirname.lstrip("/")}'
                 return os.path.join(dirname, filename)
         
         # Fallback: return just filename (will need to be found)
@@ -203,8 +205,12 @@ class DeleteFile(Action):
             # Use escaped path in the tool command
             cmd = f'which {tool_name} >/dev/null 2>&1 && {tool_cmd.format(path=escaped_path)} 2>/dev/null && echo "Deleted file: {escaped_path} (using {tool_name})" || true'
             output = live_session.run_command(cmd)
-            if "Deleted file:" in output:
-                return output, True
+            # Check for actual success message (not just the command being echoed)
+            # Success message should be a standalone line starting with "Deleted file:"
+            for line in output.split('\n'):
+                line = line.strip()
+                if line.startswith('Deleted file:') and '(using' in line:
+                    return output, True
         
         return "", False
 
@@ -244,7 +250,7 @@ class DeleteFile(Action):
         if not live_session:
             return self._create_error_result("No active session available", tulpa_session_id)
         
-        file_path = self._get_file_path(pattern)
+        file_path = self._get_file_path(pattern, live_session)
         
         if not file_path:
             return self._create_error_result("No file path found", tulpa_session_id)
@@ -265,7 +271,14 @@ class DeleteFile(Action):
             commands_executed.append("regular_deletion")
         
         stdout = "\n".join(output_lines) if output_lines else "No file deleted"
-        exit_status = 0 if output_lines and any("Deleted file:" in line for line in output_lines) else 1
+        # Check for actual success message (line starting with "Deleted file:")
+        success = False
+        for line in output_lines:
+            line_stripped = line.strip()
+            if line_stripped.startswith('Deleted file:') and '(using' in line_stripped:
+                success = True
+                break
+        exit_status = 0 if success else 1
         
         return ActionExecutionResult(
             command=commands_executed,
@@ -284,10 +297,12 @@ class DeleteFile(Action):
         lines = output.stdout.split("\n")
         
         for line in lines:
-            # Extract file paths that were deleted
-            if "Deleted file:" in line:
+            line_stripped = line.strip()
+            # Only match actual success messages (standalone lines starting with "Deleted file:")
+            # This avoids matching the command itself which might be echoed in output
+            if line_stripped.startswith('Deleted file:') and '(using' in line_stripped:
                 # Format: "Deleted file: /path/to/file (using method)"
-                parts = line.split("Deleted file:")
+                parts = line_stripped.split("Deleted file:")
                 if len(parts) > 1:
                     file_part = parts[1].split("(using")[0].strip()
                     if file_part:
