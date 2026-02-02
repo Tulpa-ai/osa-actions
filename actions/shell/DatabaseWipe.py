@@ -5,7 +5,7 @@ from artefacts.ArtefactManager import ArtefactManager
 from kg_api import Entity, Pattern
 from kg_api.query import Query
 from Session import SessionManager
-from motifs import ActionInputMotif, ActionOutputMotif
+from motifs import ActionInputMotif, ActionOutputMotif, StateChangeOperation
 
 
 class DatabaseWipe(Action):
@@ -130,12 +130,22 @@ class DatabaseWipe(Action):
         """
         Build the output motif for DatabaseWipe.
         
-        This action does not create any output entities.
+        Updates the database service to mark it as wiped when successful.
         """
-        return ActionOutputMotif(
+        output_motif = ActionOutputMotif(
             name="OutputMotif_DatabaseWipe",
             description="Output motif for DatabaseWipe"
         )
+        
+        # Template to update the database service with wiped=true
+        output_motif.add_template(
+            template_name="wiped_db_service",
+            entity=Entity("Service", alias="db_service"),
+            operation=StateChangeOperation.UPDATE,
+            expected_attributes=["wiped"],
+        )
+        
+        return output_motif
 
     def expected_outcome(self, pattern: Pattern) -> list[str]:
         """
@@ -324,11 +334,24 @@ class DatabaseWipe(Action):
         """
         Populate the output motif for DatabaseWipe.
         
-        This is a destructive action that wipes databases on the target system.
-        No graph entities are created or updated - the action only affects the target system.
+        Updates the database service to mark it as wiped when the wipe operation was successful.
         """
         self.output_motif.reset_context()
-        return []
+        changes: StateChangeSequence = []
+        
+        # If wipe was successful, mark the database service as wiped
+        if discovered_data.get("success"):
+            db_service = pattern.get("db_service")
+            if db_service:
+                # Use the output motif template to update the service with wiped=true
+                service_change = self.output_motif.instantiate(
+                    template_name="wiped_db_service",
+                    match_on_override=db_service,
+                    wiped=True,
+                )
+                changes.append(service_change)
+        
+        return changes
 
     def capture_state_change(
         self, artefacts: ArtefactManager, pattern: Pattern, output: ActionExecutionResult
@@ -336,11 +359,8 @@ class DatabaseWipe(Action):
         """
         Capture state changes from database wiping.
         
-        This action does not create or update any graph entities.
-        Databases are wiped on the target system, but no state changes are recorded in the graph.
+        Marks the database service as wiped (wiped=true) when the wipe operation was successful.
         """
-        # Parse output for potential future use (e.g., logging, reporting)
-        self.parse_output(output)
-        
-        # No state changes - return empty sequence
-        return []
+        discovered_data = self.parse_output(output)
+        changes = self.populate_output_motif(pattern, discovered_data)
+        return changes
