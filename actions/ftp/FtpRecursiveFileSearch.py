@@ -188,9 +188,12 @@ class FtpRecursiveFileSearch(Action):
             filename = path_list.pop()
             
             directory_list = []
+            cumulative_path = '/'
             for index, path in enumerate(path_list):
+                cumulative_path = os.path.join(cumulative_path, path)
                 directory_list.append({
                     'dirname': path,
+                    'dirname_ab': cumulative_path,
                     'index': index
                 })
 
@@ -218,8 +221,10 @@ class FtpRecursiveFileSearch(Action):
             full_alias = 'drive'
             all_aliases.add(full_alias)
             current_directory_pattern = drive_pattern
+            dirname_ab = '/'
             for directory_dict in file_dict['directory_list']:
                 dirname = directory_dict['dirname']
+                dirname_ab = directory_dict['dirname_ab']
                 
                 sanitized_dirname = sanitize_alias(dirname)
                 full_alias += f'_{sanitized_dirname}'
@@ -239,6 +244,8 @@ class FtpRecursiveFileSearch(Action):
                 template_name="discovered_file",
                 match_on_override=current_directory_pattern,
                 filename=file_dict['filename'],
+                dirname_ab=dirname_ab,
+                active=True,
             )
             changes.append(file_change)
         return changes
