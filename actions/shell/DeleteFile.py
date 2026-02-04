@@ -173,13 +173,16 @@ class DeleteFile(Action):
         if not filename:
             return ""
         
-        # Try to get directory path if available
+        # Use absolute directory path from File entity if available
+        dirname_ab = file_entity.get('dirname_ab')
+        if dirname_ab:
+            return os.path.join(dirname_ab, filename)
+        
+        # Fallback: try to get directory path from Directory entity
         directory = pattern.get('directory')
         if directory:
             dirname = directory.get('dirname')
             if dirname:
-                # Use os.path.join for robust path construction
-                # Handles root directory ("/") and other cases correctly
                 return os.path.join(dirname, filename)
         
         # Fallback: return just filename (will need to be found)
