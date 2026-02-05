@@ -11,7 +11,7 @@ from motifs import ActionInputMotif, ActionOutputMotif, StateChangeOperation
 
 
 class HydraConfig:
-    """Shared Hydra-related constants and helpers for password-spray (and related) actions."""
+    """Hydra-related constants and helpers for password-spray action."""
 
     ARTEFACT_SCAN_RESULTS = "scan_results_json"
     DEFAULT_USERS_FILE = "password_spray_default_users.lst"
@@ -115,6 +115,7 @@ class PasswordSprayAction(Action):
             match_on=Entity('Service'),
             relationship_type='executes_on',
             expected_attributes=["id", "username", "password", "protocol", "active"],
+            operation=StateChangeOperation.MERGE_IF_NOT_MATCH
         )
 
         return output_motif
@@ -142,8 +143,19 @@ class PasswordSprayAction(Action):
 
     def expected_outcome(self, pattern: Pattern) -> list[str]:
         """
-        Return expected outcome of action.
+        Return expected outcome of action. Validates service and asset so that
+        invalid patterns fail during planning with the same errors as function().
         """
+        service = pattern.get("service")
+        protocol_from_pattern = service.get("protocol") if getattr(service, "get", None) else None
+        if not protocol_from_pattern:
+            raise ValueError("Service has no protocol")
+
+        asset = pattern.get("asset")
+        ip_address = asset.get("ip_address") if getattr(asset, "get", None) else None
+        if not ip_address:
+            raise ValueError("Pattern has no asset or asset has no ip_address")
+
         users_ent = pattern.get("users")
         user_list = (users_ent.get("entities") or []) if getattr(users_ent, "get", None) else []
         count = len(user_list)
@@ -156,15 +168,11 @@ class PasswordSprayAction(Action):
         else:
             pwd_desc = "?"
 
-        service = pattern.get("service")
-        asset = pattern.get("asset")
-        protocol = service.get("protocol") if getattr(service, "get", None) else "?"
-        svc_id = getattr(service, "_id", "?") if service else "?"
-        ip = asset.get("ip_address") if getattr(asset, "get", None) else "?"
+        svc_id = getattr(service, "_id", "?")
 
         return [
             f"Try {pwd_desc} against {count} user(s) "
-            f"on {protocol} service ({svc_id}) on {ip}"
+            f"on {protocol_from_pattern} service ({svc_id}) on {ip_address}"
         ]
 
     def get_target_query(self) -> Query:
@@ -212,7 +220,13 @@ class PasswordSprayAction(Action):
     def _usernames_from_pattern(
         self, pattern: Pattern, artefacts: ArtefactManager
     ) -> list[str]:
-        """Return usernames from pattern (users entities) or default file; excludes anonymous for FTP."""
+        """Return usernames from pattern (users entities) or default file. Excludes
+        'anonymous' only for FTP (where it is a well-known placeholder for anonymous
+        access); for other protocols it is treated as a normal username."""
+        service = pattern.get("service")
+        protocol = service.get("protocol") if getattr(service, "get", None) else None
+        exclude_anonymous = protocol and str(protocol).lower() == "ftp"
+
         users_ent = pattern.get("users")
         user_list = (users_ent.get("entities") or []) if getattr(users_ent, "get", None) else []
         seen: set[str] = set()
@@ -221,9 +235,12 @@ class PasswordSprayAction(Action):
             if user is None:
                 continue
             name = (user.get("username") or user.get("name")) if getattr(user, "get", None) else None
-            if name and name != "anonymous" and name not in seen:
-                seen.add(name)
-                usernames.append(name)
+            if not name or name in seen:
+                continue
+            if exclude_anonymous and name.lower() == "anonymous":
+                continue
+            seen.add(name)
+            usernames.append(name)
 
         if usernames:
             return usernames
@@ -232,10 +249,15 @@ class PasswordSprayAction(Action):
             with open(artefacts.get_path(in_uuid)) as f:
                 for line in f:
                     line = line.strip()
-                    if line and not line.startswith("#") and line not in seen:
-                        seen.add(line)
-                        usernames.append(line)
+                    if not line or line.startswith("#") or line in seen:
+                        continue
+                    if exclude_anonymous and line.lower() == "anonymous":
+                        continue
+                    seen.add(line)
+                    usernames.append(line)
         except (IndexError, FileNotFoundError):
+            # Default users file is optional; if missing or not found in artefacts,
+            # simply fall back to usernames collected from the pattern.
             pass
         return usernames
 
@@ -313,19 +335,26 @@ class PasswordSprayAction(Action):
             username = cred_data["username"]
             password = cred_data["password"]
             creds_entity = Entity("Credentials", alias="creds", username=username, password=password)
-            match_creds = (
-                Entity("Credentials", alias="creds", uuid=single_cred_uuid)
-                if single_cred
-                else Entity("Credentials", alias="creds", username=username)
-            )
+            # For a single input Credentials node (password-only), update that node once by UUID,
+            # then use username-based matching for any additional discovered credentials.
+            if single_cred and not updated_single_cred:
+                match_creds = Entity("Credentials", alias="creds", uuid=single_cred_uuid)
+                updated_single_cred = True
+            else:
+                match_creds = Entity("Credentials", alias="creds", username=username)
             creds_match = match_creds - Relationship("secured_with") - service
 
-            if not single_cred or not updated_single_cred:
-                changes.append((creds_match, "update", creds_entity))
-                if single_cred:
-                    updated_single_cred = True
+            changes.append((creds_match, "update", creds_entity))
 
-            changes.append(self.output_motif.instantiate("discovered_user", match_on_override=service, username=username))
+        protocol = service.get("protocol") if service else None
+        if (
+            not service
+            or not service.get("anonymous_login")
+            or not protocol
+            or str(protocol).lower() != "ftp"
+        ):
+            # Session is a KG record of a successful login only; Hydra does not keep a live
+            # connection, so we do not register with SessionManager. active=False to reflect that.
             changes.append(self.output_motif.instantiate(
                 "discovered_session",
                 match_on_override=service,
@@ -333,7 +362,7 @@ class PasswordSprayAction(Action):
                 username=username,
                 password=password,
                 protocol=protocol,
-                active=True,
+                active=False,
             ))
         return changes
 
@@ -344,9 +373,16 @@ class PasswordSprayAction(Action):
         When the service has anonymous_login=True, Hydra may report (ftp, <any_password>)
         as valid because vsFTPd accepts any password for the ftp user. Normalize such
         results to represent anonymous access: username anonymous, password empty.
+        Only applies to FTP services.
         """
         service = pattern.get("service")
-        if not service or not service.get("anonymous_login"):
+        protocol = service.get("protocol") if service else None
+        if (
+            not service
+            or not service.get("anonymous_login")
+            or not protocol
+            or str(protocol).lower() != "ftp"
+        ):
             return discovered_data
         anonymous_usernames = {"ftp", "anonymous"}
         normalized = []
