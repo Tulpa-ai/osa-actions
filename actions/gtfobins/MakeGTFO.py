@@ -80,7 +80,7 @@ class MakeGTFO(Action):
             entity=Entity(
                 "Session",
                 alias="root_session",
-                protocol="root",
+                protocol="shell",
                 username="root",
                 active=True,
             ),
