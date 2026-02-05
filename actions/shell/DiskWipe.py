@@ -195,14 +195,12 @@ class DiskWipe(Action):
 
         # Enumerate and wipe ALL block devices of type "disk"
         # WARNING: This will wipe ALL disks including boot/system disks - no devices are excluded.
-        # Check if lsblk is available and can enumerate devices
-        # First check if lsblk exists, then try to list devices
-        check_cmd = "which lsblk >/dev/null 2>&1 && lsblk -ndo NAME,TYPE 2>&1 | awk '$2==\"disk\" {print $1}'"
+        # Try lsblk first, fall back to /proc/partitions if lsblk is not available
+        check_cmd = "if command -v lsblk >/dev/null 2>&1; then lsblk -ndo NAME,TYPE 2>&1 | awk '$2==\"disk\" {print $1}'; else cat /proc/partitions 2>&1 | awk 'NR>2 && $4 !~ /^ram/ && $4 !~ /[0-9]$/ {print $4}'; fi"
         check_output = live_session.run_command(check_cmd)
         
-        # Check for lsblk command failures
-        # If which fails, check_output will be empty due to && short-circuit
-        # Also check for error messages in stderr that might have been captured
+        # Check for command failures
+        # If both lsblk and /proc/partitions fail, output will be empty
         if not check_output.strip():
             return ActionExecutionResult(
                 command=[check_cmd],
@@ -211,7 +209,7 @@ class DiskWipe(Action):
                 session=tulpa_session_id,
             )
         
-        # Check for error messages that might appear in output
+        # Also check for error messages that might appear in output
         error_indicators = ["error", "permission denied", "cannot", "failed"]
         if any(indicator in check_output.lower() for indicator in error_indicators):
             return ActionExecutionResult(
@@ -228,7 +226,7 @@ class DiskWipe(Action):
             return ActionExecutionResult(
                 command=[check_cmd],
                 stdout="No disk devices found to wipe",
-                exit_status=0,  # Not an error, just no devices
+                exit_status=0,
                 session=tulpa_session_id,
             )
         
@@ -236,10 +234,11 @@ class DiskWipe(Action):
         # Using bs=4M (4MB blocks) for better performance than 1M
         # conv=fdatasync ensures data is written to disk but significantly slows operation
         # Expected: ~1-2 hours per 100GB, so a 1TB disk may take 10-20 hours
+        # Use same device enumeration method as check
         cmd = (
-            f"for dev in $(lsblk -ndo NAME,TYPE 2>/dev/null | awk '$2==\"disk\" {{print $1}}'); do "
+            f"for dev in $(if command -v lsblk >/dev/null 2>&1; then lsblk -ndo NAME,TYPE 2>&1 | awk '$2==\"disk\" {{print $1}}'; else cat /proc/partitions 2>&1 | awk 'NR>2 && $4 !~ /^ram/ && $4 !~ /[0-9]$/ {{print $4}}'; fi); do "
             f"echo \"{DiskWipe.WIPING_PREFIX}$dev\"; "
-            f"dd if=/dev/zero of={DiskWipe.DEVICE_PREFIX}$dev bs=4M status=none conv=fdatasync 2>/dev/null || true; "
+            f"dd if=/dev/zero of={DiskWipe.DEVICE_PREFIX}$dev bs=4M status=none conv=fdatasync 2>&1 || echo \"ERROR: dd failed for $dev\"; "
             "done; "
             f"echo '{DiskWipe.COMPLETION_MESSAGE}'"
         )
