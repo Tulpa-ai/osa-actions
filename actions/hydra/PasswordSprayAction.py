@@ -331,6 +331,7 @@ class PasswordSprayAction(Action):
 
         changes: StateChangeSequence = []
         updated_single_cred = False
+        protocol = service.get("protocol") if service else None
         for cred_data in discovered_data["discovered_credentials"]:
             username = cred_data["username"]
             password = cred_data["password"]
@@ -346,24 +347,23 @@ class PasswordSprayAction(Action):
 
             changes.append((creds_match, "update", creds_entity))
 
-        protocol = service.get("protocol") if service else None
-        if (
-            not service
-            or not service.get("anonymous_login")
-            or not protocol
-            or str(protocol).lower() != "ftp"
-        ):
             # Session is a KG record of a successful login only; Hydra does not keep a live
             # connection, so we do not register with SessionManager. active=False to reflect that.
-            changes.append(self.output_motif.instantiate(
-                "discovered_session",
-                match_on_override=service,
-                id=f"spray_{username}_{protocol}",
-                username=username,
-                password=password,
-                protocol=protocol,
-                active=False,
-            ))
+            if (
+                service
+                and not service.get("anonymous_login")
+                and protocol
+                and str(protocol).lower() != "ftp"
+            ):
+                changes.append(self.output_motif.instantiate(
+                    "discovered_session",
+                    match_on_override=service,
+                    id=f"spray_{username}_{protocol}",
+                    username=username,
+                    password=password,
+                    protocol=protocol,
+                    active=False,
+                ))
         return changes
 
     def _normalize_anonymous_ftp_credentials(
