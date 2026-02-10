@@ -6,4 +6,4 @@ from .DatabaseWipe import DatabaseWipe
 
 
 def get_actions() -> list:
-    return [LocalRecursiveFileSearch(), IpRoute(), PasswordlessSudoCheck(), ObtainShellOnExistingSession(), DatabaseWipe()]
+    return [LocalRecursiveFileSearch(), IpRoute(), PasswordlessSudoCheck(), ObtainShellOnExistingSession()]
