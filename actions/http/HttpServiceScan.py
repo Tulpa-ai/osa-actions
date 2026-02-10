@@ -53,7 +53,7 @@ class HttpServiceScan(Action):
         return scan_report
 
     def capture_state_change(
-        self, kg: GraphDB, artefacts: ArtefactManager, pattern: Pattern, output: ActionExecutionResult
+        self, artefacts: ArtefactManager, pattern: Pattern, output: ActionExecutionResult
     ) -> StateChangeSequence:
         """
         Add Drive entities and Directory entities to knowledge graph.
