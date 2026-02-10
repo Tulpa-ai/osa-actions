@@ -220,7 +220,6 @@ class FtpRecursiveFileSearch(Action):
             current_directory_pattern = drive_pattern
             for directory_dict in file_dict['directory_list']:
                 dirname = directory_dict['dirname']
-                
                 sanitized_dirname = sanitize_alias(dirname)
                 full_alias += f'_{sanitized_dirname}'
                 directory_change = self.output_motif.instantiate(
@@ -239,6 +238,7 @@ class FtpRecursiveFileSearch(Action):
                 template_name="discovered_file",
                 match_on_override=current_directory_pattern,
                 filename=file_dict['filename'],
+                active=True,
             )
             changes.append(file_change)
         return changes

@@ -1,5 +1,6 @@
 from typing import Any, Union
 
+import os
 import paramiko
 import re
 
@@ -273,7 +274,8 @@ class LocalRecursiveFileSearch(Action):
             file_change = self.output_motif.instantiate(
                 template_name="discovered_file",
                 match_on_override=current_directory_pattern,
-                filename=file_dict['filename']
+                filename=file_dict['filename'],
+                active=True,
             )
             changes.append(file_change)
         
