@@ -73,7 +73,7 @@ class HttpGobuster(Action):
         return gobuster_report
 
     def capture_state_change(
-        self, kg: GraphDB, artefacts: ArtefactManager, pattern: Pattern, output: ActionExecutionResult
+        self, artefacts: ArtefactManager, pattern: Pattern, output: ActionExecutionResult
     ) -> StateChangeSequence:
         """
         Updating knowledge graph with discovered files and folders.

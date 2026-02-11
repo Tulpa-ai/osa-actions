@@ -51,7 +51,7 @@ class HttpGetLoginPages(Action):
         return result
 
     def capture_state_change(
-        self, kg: GraphDB, artefacts: ArtefactManager, pattern: Pattern, output: ActionExecutionResult
+        self, artefacts: ArtefactManager, pattern: Pattern, output: ActionExecutionResult
     ) -> StateChangeSequence:
         """
         Update the knowledge graph with discovered web pages.
