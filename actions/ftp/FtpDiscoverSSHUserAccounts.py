@@ -1,8 +1,9 @@
+from ast import pattern
 import os
-from typing import Any, Union
+from typing import Any
 from action_state_interface.action import Action, StateChangeSequence
 from artefacts.ArtefactManager import ArtefactManager
-from kg_api import Entity, Pattern
+from kg_api import Entity, Pattern, Relationship
 from kg_api.query import Query
 from motifs import ActionInputMotif, ActionOutputMotif, StateChangeOperation
 
@@ -91,27 +92,15 @@ class FtpDiscoverSSHUserAccounts(Action):
             description="Output motif for FtpDiscoverSSHUserAccounts"
         )
 
-        # Template for SSH service entity
-        # This will be instantiated with match_on_override to match on asset_port pattern
-        # match_on is set to Entity('OpenPort') as a placeholder (will be overridden during instantiation)
-        output_motif.add_template(
-            entity=Entity('Service', alias='ssh_service', protocol='ssh'),
-            template_name="ssh_service",
-            match_on=Entity('OpenPort'),  # Placeholder - will be overridden with asset_port pattern
-            relationship_type='is_running',
-            invert_relationship=True,
-            operation=StateChangeOperation.MERGE_IF_NOT_MATCH
-        )
-
         # Template for SSH user entities
         # This matches on the ssh_service template (by name)
-        # Relationship: ssh_service -[is_client]-> user
+        # Relationship: ssh_service -[is_client]-> user <-[is_client]- ftp_service
         output_motif.add_template(
             entity=Entity('User', alias='user'),
             template_name="ssh_user",
-            match_on="ssh_service",
+            match_on=Entity('Service', alias='ssh_service', protocol='ssh'),
             relationship_type='is_client',
-            operation=StateChangeOperation.MERGE_IF_NOT_MATCH
+            operation=StateChangeOperation.MERGE
         )
 
         return output_motif
@@ -166,25 +155,29 @@ class FtpDiscoverSSHUserAccounts(Action):
         Returns:
             StateChangeSequence containing all state changes
         """
-        # TODO: This action needs to be modified so that the added user is linked to both the FTP and SSH services
         self.output_motif.reset_context()
         changes: StateChangeSequence = []
 
+        asset = pattern.get('asset')
+        ssh_port = pattern.get('ssh_port')
         ssh_service = pattern.get('ssh_service')
-        # Only create SSH service if we discovered users
-        if len(discovered_data["ssh_users"]) > 0:
-            ssh_service_change = self.output_motif.instantiate(
-                "ssh_service",
-                full_pattern_override=pattern,
+        ftp_service = pattern.get('ftp_service')
+        ftp_port = pattern.get('ftp_port')
+            
+        for username in discovered_data["ssh_users"]:
+            user = Entity('User', alias='user', username=username)
+            match_pattern = ssh_service \
+                .with_edge(Relationship('is_running', direction='l')).with_node(ssh_port) \
+                .with_edge(Relationship('has', direction='l')).with_node(asset) \
+                .with_edge(Relationship('has')).with_node(ftp_port) \
+                .with_edge(Relationship('is_running')).with_node(ftp_service) \
+                .with_edge(Relationship('is_client', direction='l')).with_node(user)
+            user_change = self.output_motif.instantiate(
+                "ssh_user",
+                match_on_override=match_pattern,
+                username=username
             )
-            changes.append(ssh_service_change)
-            for user in discovered_data["ssh_users"]:
-                user_change = self.output_motif.instantiate(
-                    "ssh_user",
-                    match_on_override=ssh_service,
-                    username=user
-                )
-                changes.append(user_change)
+            changes.append(user_change)
         
         return changes
 
