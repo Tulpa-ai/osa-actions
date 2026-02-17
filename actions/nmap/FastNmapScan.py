@@ -2,7 +2,7 @@ import pathlib
 import re
 from collections import defaultdict
 from typing import Union
-from ipaddress import ip_address
+from ipaddress import ip_address, IPv4Address, IPv4Network
 
 from action_state_interface.action import Action, StateChangeSequence
 from action_state_interface.action_utils import get_attack_ips, get_non_attack_ips, shell
@@ -118,7 +118,17 @@ class FastNmapScan(Action):
 
         if ATTACK_IPS:
             args = ["-T4", "-F", "-sS", "-n"]
-            args.extend(ip4_attack_ips)
+            target_network = IPv4Network(subnet.get('network_address'))
+
+            adresses = [IPv4Address(ip) for ip in ip4_attack_ips if '/' not in ip]
+            networks = [IPv4Network(ip) for ip in ip4_attack_ips if '/' in ip]
+
+            if target_network in networks:
+                args.extend(ip4_attack_ips)
+            else:
+                ip_args = [str(address) for address in adresses if address in target_network]
+                args.extend(ip_args)
+
             res = shell("nmap", args)
             return res
 
