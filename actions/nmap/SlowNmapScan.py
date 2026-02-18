@@ -124,11 +124,12 @@ class SlowNmapScan(Action):
             networks = [IPv4Network(ip) for ip in ip4_attack_ips if '/' in ip]
 
             if target_network in networks:
-                args.extend(ip4_attack_ips)
+                args.extend([subnet.get('network_address')])
             else:
                 ip_args = [str(address) for address in adresses if address in target_network]
                 args.extend(ip_args)
 
+            args.extend(["--exclude", ",".join(ip4_non_attack_ips)])
             res = shell("nmap", args)
             return res
 
