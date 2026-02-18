@@ -1,4 +1,3 @@
-from ast import pattern
 import os
 from typing import Any
 from action_state_interface.action import Action, StateChangeSequence
@@ -93,14 +92,13 @@ class FtpDiscoverSSHUserAccounts(Action):
         )
 
         # Template for SSH user entities
-        # This matches on the ssh_service template (by name)
+        # This matches on an SSH Service entity (alias 'ssh_service', protocol 'ssh')
         # Relationship: ssh_service -[is_client]-> user <-[is_client]- ftp_service
         output_motif.add_template(
             entity=Entity('User', alias='user'),
             template_name="ssh_user",
             match_on=Entity('Service', alias='ssh_service', protocol='ssh'),
             relationship_type='is_client',
-            operation=StateChangeOperation.MERGE
         )
 
         return output_motif
@@ -166,12 +164,19 @@ class FtpDiscoverSSHUserAccounts(Action):
             
         for username in discovered_data["ssh_users"]:
             user = Entity('User', alias='user', username=username)
-            match_pattern = ssh_service \
-                .with_edge(Relationship('is_running', direction='l')).with_node(ssh_port) \
-                .with_edge(Relationship('has', direction='l')).with_node(asset) \
-                .with_edge(Relationship('has')).with_node(ftp_port) \
-                .with_edge(Relationship('is_running')).with_node(ftp_service) \
-                .with_edge(Relationship('is_client', direction='l')).with_node(user)
+            match_pattern = (
+                ssh_service
+                .with_edge(Relationship('is_running', direction='l'))
+                .with_node(ssh_port)
+                .with_edge(Relationship('has', direction='l'))
+                .with_node(asset)
+                .with_edge(Relationship('has'))
+                .with_node(ftp_port)
+                .with_edge(Relationship('is_running'))
+                .with_node(ftp_service)
+                .with_edge(Relationship('is_client', direction='l'))
+                .with_node(user)
+            )
             user_change = self.output_motif.instantiate(
                 "ssh_user",
                 match_on_override=match_pattern,
