@@ -219,7 +219,7 @@ class NmapAssetScan(Action):
         asset = pattern.get('asset')
         uuid = artefacts.placeholder("nmap-asset-scan.xml")
         out_path = artefacts.get_path(uuid)
-        result = shell("nmap", ["-Pn", "-sT", "-sV", "-sC", "-O", "-p-", asset.get('ip_address'), "-oX", out_path])
+        result = shell("nmap", ["-n", "-T4", "-Pn", "-sC", "-sT", "-sV", "--version-light", "-O", "-p-", "--max-retries", "1", asset.get('ip_address'), "-oX", out_path])
         result.artefacts["xml_report"] = uuid
         return result
 
