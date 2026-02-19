@@ -82,6 +82,7 @@ class BusyBoxGTFO(Action):
             ),
             relationship_type="executes_on",
             match_on=Entity("Service", alias="service"),
+            operation=StateChangeOperation.MERGE_IF_NOT_MATCH,
         )
 
         return output_motif

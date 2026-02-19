@@ -11,7 +11,7 @@ from artefacts.ArtefactManager import ArtefactManager
 from kg_api import Entity, Pattern
 from kg_api.query import Query
 from Session import SessionManager
-from motifs import ActionInputMotif, ActionOutputMotif
+from motifs import ActionInputMotif, ActionOutputMotif, StateChangeOperation
 
 
 def sanitize_alias(name: str) -> str:
@@ -130,6 +130,7 @@ class LocalRecursiveFileSearch(Action):
             relationship_type="has",
             match_on="discovered_drive",
             invert_relationship=True,
+            operation=StateChangeOperation.MERGE_IF_NOT_MATCH,
         )
 
         output_motif.add_template(
@@ -138,6 +139,7 @@ class LocalRecursiveFileSearch(Action):
             relationship_type="has",
             match_on="discovered_directory",
             invert_relationship=True,
+            operation=StateChangeOperation.MERGE_IF_NOT_MATCH,
         )
 
         return output_motif
