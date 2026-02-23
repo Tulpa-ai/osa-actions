@@ -5,7 +5,7 @@ from action_state_interface.action import Action, StateChangeSequence
 from action_state_interface.action_utils import shell
 from action_state_interface.exec import ActionExecutionResult
 from artefacts.ArtefactManager import ArtefactManager
-from kg_api import Entity, GraphDB, MultiPattern, Pattern, Relationship
+from kg_api import Entity, MultiPattern, Pattern, Relationship
 from kg_api.query import Query
 from Session import SessionManager
 
@@ -60,10 +60,10 @@ class SMBShareEnumeration(Action):
             "smbclient",
             ["-L", f"//{ip_address}", "-N"],
         )
-        return stdout
+        return ActionExecutionResult(command=["smbclient"], stdout=stdout, exit_status=0)
 
     def capture_state_change(
-        self, kg: GraphDB, artefacts: ArtefactManager, pattern: Pattern, output: ActionExecutionResult
+        self, artefacts: ArtefactManager, pattern: Pattern, output: ActionExecutionResult
     ) -> StateChangeSequence:
         """
         Captures state changes from the given smb sharepoint output and attaches the smb drives to the smb service.
