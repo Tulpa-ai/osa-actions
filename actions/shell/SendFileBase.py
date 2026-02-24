@@ -62,7 +62,7 @@ class SendFileBase(Action):
 
         input_motif.add_template(
             template_name="existing_file",
-            entity=Entity('File', alias='file', active=True),
+            entity=Entity('File', alias='file', active=True, compressed=True),
         )
 
         return input_motif
@@ -84,7 +84,8 @@ class SendFileBase(Action):
         Return expected outcome of action.
         """
         source_asset = pattern.get('asset').get('ip_address')
-        filename = pattern.get('file').get('filename', 'file')
+        file_ent = pattern.get('file')
+        filename = file_ent.get('filename') if file_ent else 'file'
         return [f"Send file {filename} from {source_asset} via {self.protocol.upper()}"]
 
     def get_target_query(self) -> Query:
@@ -97,13 +98,20 @@ class SendFileBase(Action):
         query.ret_all()
         return query
 
-    def _get_file_path(self, pattern: Pattern) -> str:
+    def _get_file_path(self, pattern: Pattern) -> tuple[str, str]:
         """
         Extract and construct the remote file path from the pattern.
+        Returns (file_path, error_message). If error_message is not empty, file_path is invalid.
         """
         file_ent = pattern.get('file')
-        filename = file_ent.get('filename', 'file')
-        dirname = file_ent.get('dirname', '/tmp')
+        if not file_ent:
+            return ('', "ERROR: No file found in pattern")
+        
+        filename = file_ent.get('filename')
+        if not filename:
+            return ('', "ERROR: File entity missing filename property")
+        
+        dirname = file_ent.get('dirname') or ''
         
         # Construct remote file path
         if dirname and dirname != '/':
@@ -111,7 +119,7 @@ class SendFileBase(Action):
         else:
             remote_file_path = f"/{filename}" if dirname == '/' else filename
         
-        return remote_file_path
+        return (remote_file_path, '')
 
     def _encode_file(self, live_session, file_path: str) -> tuple[str, int]:
         """
@@ -149,15 +157,41 @@ class SendFileBase(Action):
                 exit_status=1,
             )
 
-        file_path = self._get_file_path(pattern)
-        filename = pattern.get('file').get('filename', 'file')
+        file_path, error_msg = self._get_file_path(pattern)
+        if error_msg:
+            return ActionExecutionResult(
+                command=[],
+                stderr=error_msg,
+                exit_status=1,
+                session=tulpa_session_id,
+            )
+        
+        file_ent = pattern.get('file')
+        filename = file_ent.get('filename') if file_ent else 'file'
 
         # Send via protocol-specific method
-        output, exit_status = self._send_file(live_session, file_path)
+        try:
+            output, exit_status = self._send_file(live_session, file_path)
+        except Exception as e:
+            return ActionExecutionResult(
+                command=[f"send-file-{self.protocol}", file_path],
+                stderr=f"ERROR: Failed to send file {file_path} via {self.protocol.upper()}: {str(e)}",
+                exit_status=1,
+                session=tulpa_session_id,
+            )
+
+        if exit_status != 0:
+            return ActionExecutionResult(
+                command=[f"send-file-{self.protocol}", file_path],
+                stdout=output,
+                stderr=f"ERROR: Failed to send file {file_path} via {self.protocol.upper()}. Output: {output}",
+                exit_status=exit_status,
+                session=tulpa_session_id,
+            )
 
         return ActionExecutionResult(
             command=[f"send-file-{self.protocol}", file_path],
-            stdout=f"Sent file via {self.protocol.upper()}\n{output}",
+            stdout=f"SUCCESS: Sent file {file_path} via {self.protocol.upper()}\n{output}",
             exit_status=exit_status,
             session=tulpa_session_id,
             logs=[f"Sent file {filename} via {self.protocol.upper()} exfiltration"],

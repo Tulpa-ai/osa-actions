@@ -2,8 +2,7 @@ from .LocalRecursiveFileSearch import LocalRecursiveFileSearch
 from .IpRoute import IpRoute
 from .PasswordlessSudoCheck import PasswordlessSudoCheck
 from .ObtainShellOnExistingSession import ObtainShellOnExistingSession
-from .ExtractCredentialsFromFile import ExtractCredentialsFromFile
-from .CompressFiles import CompressFiles
+from .CompressFiles import CompressFile
 from .SendFile import SendFileUDP, SendFileHTTP, SendFileICMP
 
 
@@ -13,7 +12,7 @@ def get_actions() -> list:
         IpRoute(),
         PasswordlessSudoCheck(),
         ObtainShellOnExistingSession(),
-        CompressFiles(),
+        CompressFile(),
         SendFileUDP(),
         SendFileHTTP(),
         SendFileICMP(),
