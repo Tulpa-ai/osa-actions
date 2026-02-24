@@ -56,11 +56,17 @@ class SMBShareEnumeration(Action):
         """
         asset = pattern.get('asset')
         ip_address = asset.get('ip_address')
+
+        command = "smbclient"
+        command_args = ["-L", f"//{ip_address}", "-N"]
+
         stdout = shell(
-            "smbclient",
-            ["-L", f"//{ip_address}", "-N"],
+            command,
+            command_args,
         )
-        return ActionExecutionResult(command=["smbclient"], stdout=stdout, exit_status=0)
+
+        full_command = f"{command} {' '.join(command_args)}"
+        return ActionExecutionResult(command=[full_command], stdout=stdout, exit_status=0)
 
     def capture_state_change(
         self, artefacts: ArtefactManager, pattern: Pattern, output: ActionExecutionResult
