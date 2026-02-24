@@ -1,0 +1,192 @@
+from action_state_interface.action import Action, StateChangeSequence
+from action_state_interface.exec import ActionExecutionResult
+from artefacts.ArtefactManager import ArtefactManager
+from kg_api import Entity, Pattern
+from kg_api.query import Query
+from Session import SessionManager
+from motifs import ActionInputMotif, ActionOutputMotif
+
+
+class SendFileBase(Action):
+    """
+    Base class for file exfiltration actions.
+    Provides common functionality for reading files and encoding them.
+    """
+
+    def __init__(self, action_name: str, protocol: str, technique: str = "T1041", tactic: str = "TA0010"):
+        super().__init__(action_name, technique, tactic, ["quiet", "fast"])
+        self.noise = 0.5
+        self.impact = 0.6
+        self.protocol = protocol
+        self.input_motif = self.build_input_motif()
+        self.output_motif = self.build_output_motif()
+
+    @classmethod
+    def build_input_motif(cls) -> ActionInputMotif:
+        """
+        Build the input motif for SendFile actions.
+        Requires: Asset, Session (SSH/shell), and File to send.
+        """
+        input_motif = ActionInputMotif(
+            name="InputMotif_SendFile",
+            description="Input motif for SendFile actions"
+        )
+
+        input_motif.add_template(
+            template_name="existing_asset",
+            entity=Entity('Asset', alias='asset'),
+        )
+
+        input_motif.add_template(
+            template_name="existing_port",
+            entity=Entity('OpenPort', alias='port'),
+            relationship_type="has",
+            match_on="existing_asset",
+            invert_relationship=True,
+        )
+
+        input_motif.add_template(
+            template_name="existing_service",
+            entity=Entity('Service', alias='service'),
+            relationship_type="is_running",
+            match_on="existing_port",
+            invert_relationship=True,
+        )
+
+        input_motif.add_template(
+            template_name="existing_session",
+            entity=Entity('Session', alias='session', active=True),
+            relationship_type="executes_on",
+            match_on="existing_service",
+        )
+
+        input_motif.add_template(
+            template_name="existing_file",
+            entity=Entity('File', alias='file', active=True),
+        )
+
+        return input_motif
+
+    @classmethod
+    def build_output_motif(cls) -> ActionOutputMotif:
+        """
+        Build the output motif for SendFile actions.
+        """
+        output_motif = ActionOutputMotif(
+            name="OutputMotif_SendFile",
+            description="Output motif for SendFile actions"
+        )
+
+        return output_motif
+
+    def expected_outcome(self, pattern: Pattern) -> list[str]:
+        """
+        Return expected outcome of action.
+        """
+        source_asset = pattern.get('asset').get('ip_address')
+        filename = pattern.get('file').get('filename', 'file')
+        return [f"Send file {filename} from {source_asset} via {self.protocol.upper()}"]
+
+    def get_target_query(self) -> Query:
+        """
+        Query for assets with active shell sessions and files to send.
+        """
+        query = self.input_motif.get_query()
+        query.where(self.input_motif.get_template('existing_session').entity.protocol.is_in(['ssh', 'shell']))
+        query.where(self.input_motif.get_template('existing_file').entity.active == True)
+        query.ret_all()
+        return query
+
+    def _get_file_path(self, pattern: Pattern) -> str:
+        """
+        Extract and construct the remote file path from the pattern.
+        """
+        file_ent = pattern.get('file')
+        filename = file_ent.get('filename', 'file')
+        dirname = file_ent.get('dirname', '/tmp')
+        
+        # Construct remote file path
+        if dirname and dirname != '/':
+            remote_file_path = f"{dirname}/{filename}"
+        else:
+            remote_file_path = f"/{filename}" if dirname == '/' else filename
+        
+        return remote_file_path
+
+    def _encode_file(self, live_session, file_path: str) -> tuple[str, int]:
+        """
+        Read and base64 encode a file.
+        Returns (encoded_data, exit_status)
+        """
+        escaped_path = file_path.replace('"', '\\"')
+        read_cmd = f"base64 -w 0 \"{escaped_path}\""
+        encoded_data = live_session.run_command(read_cmd).strip()
+        
+        if not encoded_data:
+            return "", 1
+        
+        return encoded_data, 0
+
+    def _send_file(self, live_session, file_path: str) -> tuple[str, int]:
+        """
+        Protocol-specific file sending implementation.
+        Must be implemented by subclasses.
+        """
+        raise NotImplementedError("Subclasses must implement _send_file method")
+
+    def function(self, sessions: SessionManager, artefacts: ArtefactManager, pattern: Pattern) -> ActionExecutionResult:
+        """
+        Send file to remote location via protocol-specific exfiltration.
+        """
+        tulpa_session = pattern.get('session')
+        tulpa_session_id = tulpa_session.get('id')
+        live_session = sessions.get_session(tulpa_session_id)
+
+        if live_session is None:
+            return ActionExecutionResult(
+                command=[],
+                stderr=f"Session {tulpa_session_id} not found",
+                exit_status=1,
+            )
+
+        file_path = self._get_file_path(pattern)
+        filename = pattern.get('file').get('filename', 'file')
+
+        # Send via protocol-specific method
+        output, exit_status = self._send_file(live_session, file_path)
+
+        return ActionExecutionResult(
+            command=[f"send-file-{self.protocol}", file_path],
+            stdout=f"Sent file via {self.protocol.upper()}\n{output}",
+            exit_status=exit_status,
+            session=tulpa_session_id,
+            logs=[f"Sent file {filename} via {self.protocol.upper()} exfiltration"],
+        )
+
+    def parse_output(self, output: ActionExecutionResult) -> dict:
+        """
+        Parse the output of the SendFile action.
+        """
+        return {
+            "file_sent": output.exit_status == 0,
+            "method": self.protocol,
+        }
+
+    def populate_output_motif(self, pattern: Pattern, discovered_data: dict) -> StateChangeSequence:
+        """
+        Populate the output motif for SendFile.
+        """
+        self.output_motif.reset_context()
+        changes: StateChangeSequence = []
+        # No entities to create, just logging
+        return changes
+
+    def capture_state_change(
+        self, artefacts: ArtefactManager, pattern: Pattern, output: ActionExecutionResult
+    ) -> StateChangeSequence:
+        """
+        Capture state changes from SendFile execution.
+        """
+        discovered_data = self.parse_output(output)
+        changes = self.populate_output_motif(pattern, discovered_data)
+        return changes
