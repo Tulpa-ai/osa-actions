@@ -3,7 +3,8 @@ from typing import Any, Union
 
 from action_state_interface.action import Action, StateChangeSequence
 from action_state_interface.exec import ActionExecutionResult
-from kg_api import Entity, GraphDB, MultiPattern, Pattern
+from artefacts.ArtefactManager import ArtefactManager
+from kg_api import Entity, MultiPattern, Pattern
 from kg_api.query import Query
 from action_state_interface.action_utils import shell
 from Session import SessionManager
@@ -59,7 +60,7 @@ class HttpDownloadFile(Action):
         mime_type, mime_encoding = cmd_get_file_info(save_path)
         return mime_type, mime_encoding
 
-    def capture_state_change(self, pattern: Pattern, output: tuple[str, str]) -> StateChangeSequence:
+    def capture_state_change(self, pattern: Pattern, artefacts: ArtefactManager, output: tuple[str, str]) -> StateChangeSequence:
         file = pattern.get('file')
         mime_type, mime_encoding = output
         new_file = file.copy()

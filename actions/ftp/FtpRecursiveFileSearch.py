@@ -4,6 +4,7 @@ from typing import Union
 from ftplib import FTP, error_perm
 from fuzzywuzzy import fuzz
 from action_state_interface.action import Action, StateChangeSequence
+from artefacts.ArtefactManager import ArtefactManager
 from kg_api import Entity, Pattern
 from kg_api.query import Query
 from Session import SessionManager
@@ -246,7 +247,7 @@ class FtpRecursiveFileSearch(Action):
         return changes
 
     def capture_state_change(
-        self, artefacts, pattern: Pattern, output
+        self, artefacts: ArtefactManager, pattern: Pattern, output: list[dict]
     ) -> StateChangeSequence:
         discovered_data = self.parse_output(output)
         changes = self.populate_output_motif(pattern, discovered_data)

@@ -2,6 +2,7 @@ from ftplib import FTP
 from typing import Union
 from action_state_interface.action import Action, StateChangeSequence
 from action_state_interface.exec import ActionExecutionResult
+from artefacts.ArtefactManager import ArtefactManager
 from kg_api import Entity, Pattern
 from kg_api.query import Query
 from Session import SessionManager
@@ -129,7 +130,7 @@ class FTPLoginWithCredentials(Action):
         return changes
 
     def capture_state_change(
-        self, artefacts, pattern: Pattern, output: ActionExecutionResult
+        self, artefacts: ArtefactManager, pattern: Pattern, output: ActionExecutionResult
     ) -> StateChangeSequence:
         """
         Capture the state change for the FTPLoginWithCredentials action.
