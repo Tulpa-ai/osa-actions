@@ -71,10 +71,17 @@ class SendFileBase(Action):
     def build_output_motif(cls) -> ActionOutputMotif:
         """
         Build the output motif for SendFile actions.
+        Updates the File entity with exfiltration information.
         """
         output_motif = ActionOutputMotif(
             name="OutputMotif_SendFile",
             description="Output motif for SendFile actions"
+        )
+
+        output_motif.add_template(
+            template_name="exfiltrated_file",
+            entity=Entity('File', alias='file'),
+            expected_attributes=["exfiltrated_domain", "exfiltrated_protocol"],
         )
 
         return output_motif
@@ -135,10 +142,11 @@ class SendFileBase(Action):
         
         return encoded_data, 0
 
-    def _send_file(self, live_session, file_path: str) -> tuple[str, int]:
+    def _send_file(self, live_session, file_path: str) -> tuple[str, int, str]:
         """
         Protocol-specific file sending implementation.
         Must be implemented by subclasses.
+        Returns (output, exit_status, target_domain)
         """
         raise NotImplementedError("Subclasses must implement _send_file method")
 
@@ -171,7 +179,7 @@ class SendFileBase(Action):
 
         # Send via protocol-specific method
         try:
-            output, exit_status = self._send_file(live_session, file_path)
+            output, exit_status, target_domain = self._send_file(live_session, file_path)
         except Exception as e:
             return ActionExecutionResult(
                 command=[f"send-file-{self.protocol}", file_path],
@@ -187,6 +195,7 @@ class SendFileBase(Action):
                 stderr=f"ERROR: Failed to send file {file_path} via {self.protocol.upper()}. Output: {output}",
                 exit_status=exit_status,
                 session=tulpa_session_id,
+                artefacts={"target_domain": target_domain, "protocol": self.protocol},
             )
 
         return ActionExecutionResult(
@@ -194,6 +203,7 @@ class SendFileBase(Action):
             stdout=f"SUCCESS: Sent file {file_path} via {self.protocol.upper()}\n{output}",
             exit_status=exit_status,
             session=tulpa_session_id,
+            artefacts={"target_domain": target_domain, "protocol": self.protocol},
             logs=[f"Sent file {filename} via {self.protocol.upper()} exfiltration"],
         )
 
@@ -204,15 +214,28 @@ class SendFileBase(Action):
         return {
             "file_sent": output.exit_status == 0,
             "method": self.protocol,
+            "target_domain": output.artefacts.get("target_domain", ""),
+            "protocol": output.artefacts.get("protocol", self.protocol),
         }
 
     def populate_output_motif(self, pattern: Pattern, discovered_data: dict) -> StateChangeSequence:
         """
         Populate the output motif for SendFile.
+        Updates the File entity with exfiltration domain and protocol.
         """
         self.output_motif.reset_context()
         changes: StateChangeSequence = []
-        # No entities to create, just logging
+        
+        # If file was successfully sent, update the File entity with exfiltration info
+        if discovered_data.get("file_sent"):
+            file_entity = pattern.get("file")
+            if file_entity:
+                # Create updated file entity with exfiltration properties
+                updated_file = file_entity.copy()
+                updated_file.set("exfiltrated_domain", discovered_data.get("target_domain", ""))
+                updated_file.set("exfiltrated_protocol", discovered_data.get("protocol", self.protocol))
+                changes.append((pattern, "update", updated_file))
+        
         return changes
 
     def capture_state_change(

