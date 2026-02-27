@@ -63,6 +63,8 @@ class SendFileBase(Action):
         input_motif.add_template(
             template_name="existing_file",
             entity=Entity('File', alias='file', active=True, compressed=True),
+            relationship_type="directed_path",
+            match_on="existing_asset",
         )
 
         return input_motif
@@ -100,7 +102,7 @@ class SendFileBase(Action):
         Query for assets with active shell sessions and files to send.
         """
         query = self.input_motif.get_query()
-        query.where(self.input_motif.get_template('existing_session').entity.protocol.is_in(['ssh', 'shell']))
+        query.where(self.input_motif.get_template('existing_session').entity.protocol.is_in(['ssh', 'shell', 'busybox']))
         query.where(self.input_motif.get_template('existing_file').entity.active == True)
         query.ret_all()
         return query
@@ -128,12 +130,20 @@ class SendFileBase(Action):
         
         return (remote_file_path, '')
 
+    def _escape_path_for_shell(self, file_path: str) -> str:
+        """
+        Escape a file path for safe use in shell commands.
+        Escapes special shell characters: $ (variable expansion), ` (command substitution),
+        " (quotes), and backslashes.
+        """
+        return file_path.replace("\\", "\\\\").replace('"', '\\"').replace("$", "\\$").replace("`", "\\`")
+
     def _encode_file(self, live_session, file_path: str) -> tuple[str, int]:
         """
         Read and base64 encode a file.
         Returns (encoded_data, exit_status)
         """
-        escaped_path = file_path.replace('"', '\\"')
+        escaped_path = self._escape_path_for_shell(file_path)
         read_cmd = f"base64 -w 0 \"{escaped_path}\""
         encoded_data = live_session.run_command(read_cmd).strip()
         

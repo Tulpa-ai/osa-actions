@@ -16,7 +16,7 @@ class CompressFile(Action):
     """
 
     # Shell-capable protocols for running commands
-    SHELL_PROTOCOLS = ["ssh", "shell"]
+    SHELL_PROTOCOLS = ["ssh", "shell", "busybox"]
 
     def __init__(self):
         super().__init__("CompressFile", "T1560", "TA0010", ["quiet", "fast"])
@@ -99,9 +99,30 @@ class CompressFile(Action):
         )
 
         output_motif.add_template(
+            template_name="compressed_drive",
+            entity=Entity('Drive', alias='drive'),
+            relationship_type="accesses",
+            match_on=Entity('Asset', alias='asset'),
+            invert_relationship=True,
+            expected_attributes=["location"],
+        )
+
+        output_motif.add_template(
+            template_name="compressed_directory",
+            entity=Entity('Directory', alias='directory', dirname="/tmp"),
+            relationship_type="has",
+            match_on="compressed_drive",
+            invert_relationship=True,
+            operation=StateChangeOperation.MERGE_IF_NOT_MATCH,
+        )
+
+        output_motif.add_template(
             template_name="compressed_archive",
             entity=Entity('File', alias='archive'),
-            expected_attributes=["artefact_id", "filename", "compressed"],
+            relationship_type="has",
+            match_on="compressed_directory",
+            invert_relationship=True,
+            expected_attributes=["filename", "compressed"],
             operation=StateChangeOperation.MERGE_IF_NOT_MATCH,
         )
 
@@ -319,7 +340,7 @@ class CompressFile(Action):
         """
         Populate the output motif for CompressFile.
 
-        Creates a File entity for the compressed archive if compression succeeded.
+        Creates Drive, Directory, and File entities for the compressed archive if compression succeeded.
         """
         self.output_motif.reset_context()
         changes: StateChangeSequence = []
@@ -328,10 +349,34 @@ class CompressFile(Action):
         if discovered_data.get("success"):
             archive_name = discovered_data.get("archive_name", "")
             if archive_name:
-                # Create File entity for the compressed archive
+                asset = pattern.get('asset')
+                
+                # Create Drive connected to Asset
+                drive_change = self.output_motif.instantiate(
+                    template_name="compressed_drive",
+                    match_on_override=asset,
+                    location=f"{asset.get('ip_address')}/"
+                )
+                changes.append(drive_change)
+                
+                # Get the drive from the change
+                drive_pattern = drive_change[2][-1] if isinstance(drive_change, tuple) and len(drive_change) > 2 else drive_change[-1]
+                
+                # Create Directory connected to Drive
+                directory_change = self.output_motif.instantiate(
+                    template_name="compressed_directory",
+                    match_on_override=drive_pattern,
+                    dirname="/tmp"
+                )
+                changes.append(directory_change)
+                
+                # Get the directory from the change
+                directory_pattern = directory_change[2][-1] if isinstance(directory_change, tuple) and len(directory_change) > 2 else directory_change[-1]
+                
+                # Create File entity for the compressed archive connected to Directory
                 archive_change = self.output_motif.instantiate(
                     template_name="compressed_archive",
-                    match_on_override=pattern.get('asset'),
+                    match_on_override=directory_pattern,
                     filename=archive_name,
                     dirname="/tmp",
                     active=True,
