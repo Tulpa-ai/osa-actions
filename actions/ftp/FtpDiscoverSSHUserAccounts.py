@@ -2,7 +2,7 @@ import os
 from typing import Any
 from action_state_interface.action import Action, StateChangeSequence
 from artefacts.ArtefactManager import ArtefactManager
-from kg_api import Entity, Pattern, Relationship
+from kg_api import Entity, MultiPattern, Pattern, Relationship
 from kg_api.query import Query
 from motifs import ActionInputMotif, ActionOutputMotif, StateChangeOperation
 
@@ -161,29 +161,24 @@ class FtpDiscoverSSHUserAccounts(Action):
         ssh_service = pattern.get('ssh_service')
         ftp_service = pattern.get('ftp_service')
         ftp_port = pattern.get('ftp_port')
-            
+
         for username in discovered_data["ssh_users"]:
             user = Entity('User', alias='user', username=username)
-            match_pattern = (
-                ssh_service
-                .with_edge(Relationship('is_running', direction='l'))
-                .with_node(ssh_port)
-                .with_edge(Relationship('has', direction='l'))
-                .with_node(asset)
-                .with_edge(Relationship('has'))
-                .with_node(ftp_port)
-                .with_edge(Relationship('is_running'))
-                .with_node(ftp_service)
-                .with_edge(Relationship('is_client', direction='l'))
-                .with_node(user)
-            )
-            user_change = self.output_motif.instantiate(
-                "ssh_user",
-                match_on_override=match_pattern,
-                username=username
-            )
-            changes.append(user_change)
-        
+            # 1. Ensure one User per username: merge by username so all bindings reuse the same node.
+            changes.append((None, 'merge', user))
+            # 2. Link that user to this binding's SSH service (merge finds user by username).
+            user_ssh_match = MultiPattern([
+                Pattern(Entity('User', alias='user', username=username)),
+                Pattern(ssh_service),
+            ])
+            changes.append((user_ssh_match, 'merge', user.with_edge(Relationship('is_client')).with_node(ssh_service)))
+            # 3. Link same user to FTP service so user is client of both.
+            user_ftp_match = MultiPattern([
+                Pattern(Entity('User', alias='user', username=username)),
+                Pattern(ftp_service),
+            ])
+            changes.append((user_ftp_match, 'merge', user.with_edge(Relationship('is_client')).with_node(ftp_service)))
+
         return changes
 
     def capture_state_change(
