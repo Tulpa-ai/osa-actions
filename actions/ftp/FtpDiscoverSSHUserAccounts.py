@@ -1,10 +1,10 @@
 import os
-from typing import Any
+from typing import Any, Optional
 from action_state_interface.action import Action, StateChangeSequence
 from artefacts.ArtefactManager import ArtefactManager
-from kg_api import Entity, MultiPattern, Pattern, Relationship
+from kg_api import Entity, MultiPattern, Pattern
 from kg_api.query import Query
-from motifs import ActionInputMotif, ActionOutputMotif, StateChangeOperation
+from motifs import ActionInputMotif, ActionOutputMotif
 
 
 class FtpDiscoverSSHUserAccounts(Action):
@@ -85,18 +85,31 @@ class FtpDiscoverSSHUserAccounts(Action):
     def build_output_motif(cls) -> ActionOutputMotif:
         """
         Build the output motif for FtpDiscoverSSHUserAccounts.
+
+        Two templates are used so we can emit three state changes per user via
+        instantiate() while keeping small match patterns (avoiding a single long path):
+
+        - ssh_user: Ensures a User with the given username exists (no match, no relationship).
+          Instantiated once per user → (None, 'merge', user).
+
+        - user_is_client_of_service: Links that user as client of a service (user -[is_client]-> service).
+          Instantiated twice per user (SSH and FTP) with match_on_override and full_pattern_override
+          so the merge uses MultiPattern([User, service]) as the match.
         """
         output_motif = ActionOutputMotif(
             name="OutputMotif_FtpDiscoverSSHUserAccounts",
             description="Output motif for FtpDiscoverSSHUserAccounts"
         )
 
-        # Template for SSH user entities
-        # This matches on an SSH Service entity (alias 'ssh_service', protocol 'ssh')
-        # Relationship: ssh_service -[is_client]-> user <-[is_client]- ftp_service
         output_motif.add_template(
             entity=Entity('User', alias='user'),
             template_name="ssh_user",
+            match_on=None,
+        )
+
+        output_motif.add_template(
+            entity=Entity('User', alias='user'),
+            template_name="user_is_client_of_service",
             match_on=Entity('Service', alias='ssh_service', protocol='ssh'),
             relationship_type='is_client',
         )
@@ -139,50 +152,53 @@ class FtpDiscoverSSHUserAccounts(Action):
     def populate_output_motif(self, pattern: Pattern, discovered_data: dict) -> StateChangeSequence:
         """
         Populate output motif templates using the motif instantiation system.
-        
-        This method:
-        1. Resets the output motif context for this execution
-        2. Builds the asset_port pattern from the input pattern
-        3. Instantiates the ssh_service template if SSH users are discovered
-        4. Instantiates the ssh_user template for each discovered user
-        
+
+        Resets the output motif context, then for each discovered SSH username:
+        1. Instantiates the "ssh_user" template → (None, 'merge', user).
+        2. Instantiates "user_is_client_of_service" with match_on_override=ssh_service and
+           full_pattern_override=MultiPattern([user, ssh_service]) → link user to SSH.
+        3. Instantiates "user_is_client_of_service" with match_on_override=ftp_service and
+           full_pattern_override=MultiPattern([user, ftp_service]) → link user to FTP.
+
         Args:
-            pattern: Input pattern containing the asset
-            discovered_data: Dictionary containing parsed SSH user data
-            
+            pattern: Input pattern containing the asset and FTP/SSH services.
+            discovered_data: Dictionary containing parsed SSH user data ("ssh_users" list).
+
         Returns:
-            StateChangeSequence containing all state changes
+            StateChangeSequence containing all state changes.
         """
         self.output_motif.reset_context()
         changes: StateChangeSequence = []
 
-        asset = pattern.get('asset')
-        ssh_port = pattern.get('ssh_port')
         ssh_service = pattern.get('ssh_service')
         ftp_service = pattern.get('ftp_service')
-        ftp_port = pattern.get('ftp_port')
 
         for username in discovered_data["ssh_users"]:
-            user = Entity('User', alias='user', username=username)
-            # 1. Ensure one User per username: merge by username so all bindings reuse the same node.
-            changes.append((None, 'merge', user))
-            # 2. Link that user to this binding's SSH service (merge finds user by username).
-            user_ssh_match = MultiPattern([
-                Pattern(Entity('User', alias='user', username=username)),
-                Pattern(ssh_service),
-            ])
-            changes.append((user_ssh_match, 'merge', user.with_edge(Relationship('is_client')).with_node(ssh_service)))
-            # 3. Link same user to FTP service so user is client of both.
-            user_ftp_match = MultiPattern([
-                Pattern(Entity('User', alias='user', username=username)),
-                Pattern(ftp_service),
-            ])
-            changes.append((user_ftp_match, 'merge', user.with_edge(Relationship('is_client')).with_node(ftp_service)))
+            user_pattern = Pattern(Entity('User', alias='user', username=username))
+
+            changes.append(self.output_motif.instantiate("ssh_user", username=username))
+
+            changes.append(
+                self.output_motif.instantiate(
+                    "user_is_client_of_service",
+                    match_on_override=ssh_service,
+                    full_pattern_override=MultiPattern([user_pattern, Pattern(ssh_service)]),
+                    username=username,
+                )
+            )
+            changes.append(
+                self.output_motif.instantiate(
+                    "user_is_client_of_service",
+                    match_on_override=ftp_service,
+                    full_pattern_override=MultiPattern([user_pattern, Pattern(ftp_service)]),
+                    username=username,
+                )
+            )
 
         return changes
 
     def capture_state_change(
-        self, artefacts: ArtefactManager, pattern: Pattern, output: Any
+        self, artefacts: Optional[ArtefactManager], pattern: Pattern, output: Any
     ) -> StateChangeSequence:
         """Capture and update the knowledge graph based on discovered SSH user accounts.
 
