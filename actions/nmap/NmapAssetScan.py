@@ -32,7 +32,7 @@ def nmap_parse_os_version_and_family(xml_str):
 
     return os_version, os_family, os_cpe
 
-def ftp_nmap_parser(port_data: dict, parsed_info: dict, conn=None) -> dict:
+async def ftp_nmap_parser(port_data: dict, parsed_info: dict, conn=None) -> dict:
     """
     Parse FTP-specific information and return structured data for motif instantiation.
 
@@ -57,7 +57,7 @@ def ftp_nmap_parser(port_data: dict, parsed_info: dict, conn=None) -> dict:
     # Get service-level vulnerabilities
     service_vulnerabilities = []
     if port_data["cpe"] and port_data["cpe"] != "unknown":
-        cve_dict = query_scap_for_cve_fuzzy(port_data["cpe"], conn)
+        cve_dict = await query_scap_for_cve_fuzzy(port_data["cpe"], conn)
         for cve_id, details in cve_dict.items():
             service_vulnerabilities.append({
                 "id": cve_id,
@@ -79,7 +79,7 @@ def ftp_nmap_parser(port_data: dict, parsed_info: dict, conn=None) -> dict:
         "user_entities": user_entities
     }
 
-def generic_service_parser(port_data: dict, parsed_info: dict, conn=None) -> dict:
+async def generic_service_parser(port_data: dict, parsed_info: dict, conn=None) -> dict:
     """
     Parse generic service information and return structured data for motif instantiation.
 
@@ -100,7 +100,7 @@ def generic_service_parser(port_data: dict, parsed_info: dict, conn=None) -> dic
     # Get service-level vulnerabilities
     service_vulnerabilities = []
     if port_data["cpe"] and port_data["cpe"] != "unknown":
-        cve_dict = query_scap_for_cve_fuzzy(port_data["cpe"], conn)
+        cve_dict = await query_scap_for_cve_fuzzy(port_data["cpe"], conn)
         for cve_id, details in cve_dict.items():
             service_vulnerabilities.append({
                 "id": cve_id,
@@ -223,7 +223,7 @@ class NmapAssetScan(Action):
         result.artefacts["xml_report"] = uuid
         return result
 
-    def parse_output(self, artefacts: ArtefactManager, output: ActionExecutionResult, conn=None) -> dict:
+    async def parse_output(self, artefacts: ArtefactManager, output: ActionExecutionResult, conn=None) -> dict:
         """
         Parse the nmap XML output and extract all relevant information for motif-based approach.
 
@@ -278,7 +278,7 @@ class NmapAssetScan(Action):
         # Get asset-level vulnerabilities from OS CPE
         asset_vulnerabilities = []
         if os_cpe != "unknown":
-            cve_dict = query_scap_for_cve_fuzzy(os_cpe, conn)
+            cve_dict = await query_scap_for_cve_fuzzy(os_cpe, conn)
             for cve_id, details in cve_dict.items():
                 asset_vulnerabilities.append({
                     "id": cve_id,
@@ -291,12 +291,9 @@ class NmapAssetScan(Action):
         for port_data in open_ports:
             # Use service-specific parser if available, otherwise use generic
             if port_data["service_name"] in self._parsers:
-                if port_data["service_name"] == "ftp":
-                    service_info = ftp_nmap_parser(port_data, parsed_info, conn)
-                else:
-                    service_info = generic_service_parser(port_data, parsed_info, conn)
+                service_info = await self._parsers[port_data["service_name"]](port_data, parsed_info, conn)
             else:
-                service_info = generic_service_parser(port_data, parsed_info, conn)
+                service_info = await generic_service_parser(port_data, parsed_info, conn)
 
             processed_ports.append({
                 "port_data": port_data,
@@ -395,7 +392,7 @@ class NmapAssetScan(Action):
 
         return changes
 
-    def capture_state_change(
+    async def capture_state_change(
         self,
         artefacts: ArtefactManager,
         pattern: Pattern,
@@ -405,6 +402,6 @@ class NmapAssetScan(Action):
         """
         Capture the state changes from the nmap output.
         """
-        discovered_data = self.parse_output(artefacts, output, conn)
+        discovered_data = await self.parse_output(artefacts, output, conn)
         changes = self.populate_output_motif(pattern, discovered_data, conn)
         return changes
