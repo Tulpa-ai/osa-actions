@@ -80,6 +80,7 @@ class HydraBruteForceAction(Action):
             template_name="discovered_credentials",
             match_on=Entity('Service'),
             relationship_type='secured_with',
+            expected_attributes=["username", "password"],
             operation=StateChangeOperation.MERGE_IF_NOT_MATCH
         )
 
@@ -92,6 +93,7 @@ class HydraBruteForceAction(Action):
             match_on=Entity('Service'),
             relationship_type='is_client',
             invert_relationship=False,  # User -[is_client]-> Service (relationship is inverted in schema)
+            expected_attributes=["username"],
             operation=StateChangeOperation.MERGE_IF_NOT_MATCH
         )
 
