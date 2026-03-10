@@ -102,7 +102,7 @@ class DiscoverSSHAuthMethods(Action):
         output_motif.add_template(
             entity=Entity('User', alias='user'),
             template_name="updated_user",
-            operation=StateChangeOperation.UPDATE,
+            operation=StateChangeOperation.MERGE_IF_NOT_MATCH,
             expected_attributes=["ssh_authentication"],
         )
         output_motif.add_template(
@@ -191,9 +191,16 @@ class DiscoverSSHAuthMethods(Action):
         user_from_pattern = pattern.get('user')
         ssh_service_from_pattern = pattern.get('ssh_service')
 
+        # IMPORTANT: when using MERGE operations, the Cypher builder can end up with
+        # the `user` variable already bound by the match pattern. If we then emit a
+        # `MERGE (user)` again, Neo4j raises "Variable `user` already declared".
+        # To avoid this, we create a match-on User entity with a different alias.
+        user_uuid = user_from_pattern.get("uuid")
+        user_match = Entity("User", alias="ssh_user", uuid=user_uuid)
+
         changes.append(self.output_motif.instantiate(
             template_name="updated_user",
-            match_on_override=user_from_pattern,
+            match_on_override=user_match,
             ssh_authentication=discovered_data["ssh_authentication"],
         ))
         
