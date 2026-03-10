@@ -16,8 +16,7 @@ class HydraConfig:
     ARTEFACT_SCAN_RESULTS = "scan_results_json"
     DEFAULT_USERS_FILE = "password_spray_default_users.lst"
     HYDRA_SUPPORTED_PROTOCOLS = frozenset({
-        "ssh", "ftp", "telnet", "http", "https", "http-get", "http-post",
-        "mysql", "mssql", "postgres", "rdp", "smb", "vnc",
+        "ssh", "ftp", "telnet", "mysql", "mssql", "postgres", "rdp", "smb", "vnc",
     })
     PROTOCOL_ALIASES = {"postgresql": "postgres"}
     USERS_NON_NULL = "[u IN collect(DISTINCT users) WHERE u IS NOT NULL]"
@@ -128,7 +127,7 @@ class PasswordSprayAction(Action):
         return pattern_creds.get("entities") or [pattern_creds]
 
     @staticmethod
-    def _passwords_from_creds(creds_ent) -> list[str]:
+    def _property_from_creds(creds_ent, prop="password") -> list[str]:
         """Return non-empty password strings from credentials (single entity or entities list)."""
         if not creds_ent or not getattr(creds_ent, "get", None):
             return []
@@ -136,9 +135,9 @@ class PasswordSprayAction(Action):
         if entities:
             return [
                 p for e in entities
-                if getattr(e, "get", None) and (p := e.get("password")) and str(p).strip()
+                if getattr(e, "get", None) and (p := e.get(prop)) and str(p).strip()
             ]
-        pwd = creds_ent.get("password")
+        pwd = creds_ent.get(prop)
         return [pwd] if pwd and str(pwd).strip() else []
 
     def expected_outcome(self, pattern: Pattern) -> list[str]:
@@ -158,9 +157,12 @@ class PasswordSprayAction(Action):
 
         users_ent = pattern.get("users")
         user_list = (users_ent.get("entities") or []) if getattr(users_ent, "get", None) else []
+        creds_ent = pattern.get("credentials")
+        creds_users = self._property_from_creds(creds_ent, prop="username")
+        user_list.extend(creds_users)
         count = len(user_list)
 
-        passwords = self._passwords_from_creds(pattern.get("credentials"))
+        passwords = self._property_from_creds(creds_ent, prop="password")
         if len(passwords) > 1:
             pwd_desc = f"{len(passwords)} password(s)"
         elif len(passwords) == 1:
@@ -272,7 +274,7 @@ class PasswordSprayAction(Action):
         if hydra_protocol not in HydraConfig.HYDRA_SUPPORTED_PROTOCOLS:
             return self._noop_result(f"Hydra does not support protocol: {protocol_from_pattern}")
 
-        passwords = self._passwords_from_creds(pattern.get("credentials"))
+        passwords = self._property_from_creds(pattern.get("credentials"), prop="password")
         if not passwords:
             return self._noop_result("no credentials with password in pattern; skipping")
 
@@ -325,27 +327,25 @@ class PasswordSprayAction(Action):
         self.output_motif.reset_context()
         service = pattern.get("service")
         protocol = service.get("protocol")
-        cred_list = self._cred_list_from_pattern_creds(pattern.get("credentials"))
-        single_cred = len(cred_list) == 1 and cred_list[0] and cred_list[0].get("uuid")
-        single_cred_uuid = cred_list[0].get("uuid") if single_cred else None
 
         changes: StateChangeSequence = []
-        updated_single_cred = False
         protocol = service.get("protocol") if service else None
         for cred_data in discovered_data["discovered_credentials"]:
             username = cred_data["username"]
             password = cred_data["password"]
-            creds_entity = Entity("Credentials", alias="creds", username=username, password=password)
-            # For a single input Credentials node (password-only), update that node once by UUID,
-            # then use username-based matching for any additional discovered credentials.
-            if single_cred and not updated_single_cred:
-                match_creds = Entity("Credentials", alias="creds", uuid=single_cred_uuid)
-                updated_single_cred = True
-            else:
-                match_creds = Entity("Credentials", alias="creds", username=username)
-            creds_match = match_creds - Relationship("secured_with") - service
 
-            changes.append((creds_match, "update", creds_entity))
+            changes.append(self.output_motif.instantiate(
+                'discovered_user',
+                match_on_override=service,
+                username=username
+            ))
+
+            changes.append(self.output_motif.instantiate(
+                'discovered_credentials',
+                match_on_override=service,
+                username=username,
+                password=password
+            ))
 
             # Session is a KG record of a successful login only; Hydra does not keep a live
             # connection, so we do not register with SessionManager. active=False to reflect that.
