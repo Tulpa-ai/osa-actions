@@ -175,10 +175,8 @@ class CMESMBPasswordSpray(Action):
         Returns:
             Dict mapping ip addresses to computer account details
         """
-        if output.exit_status != 0:
-            return {}
-
-        # Parse crackmapexec output
+        # Parse crackmapexec output regardless of exit_status, as some acceptable runs may
+        # return a non-zero code (e.g., 1) while still printing valid discoveries to stdout.
         # Format: SMB         192.168.56.11   445    WINTERFELL       north.sevenkingdoms.local\brandon.stark:iseedeadpeople (Pwn3d!)
         cme_output = output.stdout.strip()
 
