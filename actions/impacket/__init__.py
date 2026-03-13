@@ -2,7 +2,6 @@ from . import (
     ImpacketGetNPUsers,
     ImpacketGetUserSPNs,
     ImpacketMSSQLClient,
-    ImpacketSMBEnum,
 )
 
 
@@ -13,6 +12,5 @@ def get_actions() -> list:
     return [
         ImpacketGetNPUsers.ImpacketGetNPUsers(),
         ImpacketGetUserSPNs.ImpacketGetUserSPNs(),
-        ImpacketSMBEnum.ImpacketSMBEnum(),
         ImpacketMSSQLClient.ImpacketMSSQLClient(),
     ]
