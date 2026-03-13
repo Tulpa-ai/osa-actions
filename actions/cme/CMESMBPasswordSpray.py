@@ -7,9 +7,6 @@ from kg_api.query import Query
 from Session import SessionManager
 from motifs import ActionInputMotif, ActionOutputMotif
 
-DEFAULT_USERS_FILE = "password_spray_default_users.lst"
-ARTEFACT_SCAN_RESULTS = "cme_scan_results_json"
-
 class CMESMBPasswordSpray(Action):
     """Password spray via CME: one password against known users on SMB.
     Example command:
@@ -120,8 +117,7 @@ class CMESMBPasswordSpray(Action):
         ]
 
     def get_target_query(self) -> Query:
-        """DomainPartition + ComputerAccount + Credentials (password). When no users in graph, use
-        default user list (password_spray_default_users.lst)."""
+        """Return the query for DomainPartition + ComputerAccount + Credentials (password)."""
         query = self.input_motif.get_query()
         query.ret_all()
         return query
