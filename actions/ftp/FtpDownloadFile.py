@@ -28,6 +28,7 @@ class FtpDownloadFile(Action):
         self.impact = 0.8
         self.input_motif = self.build_input_motif()
         self.output_motif = self.build_output_motif()
+        self.filenames = ['id_rsa', 'authorized_keys']
 
     @classmethod
     def build_input_motif(cls) -> ActionInputMotif:
@@ -70,10 +71,11 @@ class FtpDownloadFile(Action):
 
         input_motif.add_template(
             template_name="existing_file",
-            entity=Entity('File', alias='file', filename='id_rsa'),
+            entity=Entity('File', alias='file'),
             match_on="existing_drive",
             relationship_type="directed_path",
             pattern_alias='path_to_file',
+            expected_attributes=["filename"],
         )
 
         input_motif.add_template(
@@ -96,7 +98,7 @@ class FtpDownloadFile(Action):
         )
         output_motif.add_template(
             template_name="downloaded_file",
-            entity=Entity('File', alias='file', filename='id_rsa'),
+            entity=Entity('File', alias='file'),
             expected_attributes=["artefact_id"],
             operation=StateChangeOperation.UPDATE
         )
@@ -111,6 +113,7 @@ class FtpDownloadFile(Action):
 
     def get_target_query(self) -> Query:
         query = self.input_motif.get_query()
+        query.where(self.input_motif.get_template("existing_file").entity.filename.is_in(self.filenames))
         query.ret_all()
         return query
 
