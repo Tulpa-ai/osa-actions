@@ -165,15 +165,15 @@ class CMESMBPasswordSpray(Action):
             error_msg = f"Error running crackmapexec: {str(e)}"
             return ActionExecutionResult(command=[cme_command] + cme_args, stderr=error_msg, exit_status=1)
 
-    def parse_output(self, output: ActionExecutionResult) -> dict[str, list[str]]:
+    def parse_output(self, output: ActionExecutionResult) -> dict[str, dict[str, str]]:
         """
-        Parse cme output to extract discovered IP addresses and their computer accounts.
+        Parse cme output to extract discovered usernames and their account details.
 
         Args:
             output: ActionExecutionResult containing cme scan output
 
         Returns:
-            Dict mapping ip addresses to computer account details
+            Dict mapping usernames to account detail dictionaries.
         """
         # Parse crackmapexec output regardless of exit_status, as some acceptable runs may
         # return a non-zero code (e.g., 1) while still printing valid discoveries to stdout.
@@ -186,13 +186,13 @@ class CMESMBPasswordSpray(Action):
         discoveries = parse_crackmapexec_users_output(cme_output)
         return {d['username']: d for d in discoveries}
 
-    def populate_output_motif(self, pattern: Pattern, discovered_data: dict[str, list[str]]) -> StateChangeSequence:
+    def populate_output_motif(self, pattern: Pattern, discovered_data: dict[str, dict[str, str]]) -> StateChangeSequence:
         """
         Instantiate output motif changes based on discovered data.
 
         Args:
             pattern: original Pattern-like mapping used as context for matching.
-            discovered_data: mapping returned by parse_output().
+            discovered_data: mapping from usernames to account detail dictionaries, as returned by parse_output().
 
         Returns:
             StateChangeSequence: list of state change operations to apply to the KG.
