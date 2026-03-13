@@ -1,5 +1,3 @@
-import json
-
 from action_state_interface.action import Action, StateChangeSequence
 from action_state_interface.action_utils import parse_crackmapexec_users_output, shell
 from action_state_interface.exec import ActionExecutionResult
