@@ -22,7 +22,7 @@ class CMESMBPasswordSpray(Action):
 
     @classmethod
     def build_input_motif(cls) -> ActionInputMotif:
-        """DomainPartition + ComputerAccount + Credentials (password)."""
+        """DomainPartition + ComputerAccount + Credentials (username, password)."""
         input_motif = ActionInputMotif(
             name="InputMotif_CMESMBPasswordSpray",
             description="Input motif for CMESMBPasswordSpray"
@@ -40,7 +40,7 @@ class CMESMBPasswordSpray(Action):
         input_motif.add_template(
             template_name="spray_password",
             entity=Entity('Credentials', alias='credentials'),
-            expected_attributes=["password"],
+            expected_attributes=["username", "password"],
         )
 
         return input_motif
