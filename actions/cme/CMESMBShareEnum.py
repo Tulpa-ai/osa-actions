@@ -11,9 +11,9 @@ from motifs import ActionInputMotif, ActionOutputMotif
 from Session import SessionManager
 
 
-class ImpacketSMBEnum(Action):
+class CMESMBShareEnum(Action):
     """
-    ImpacketSMBEnum action that enumerates SMB shares using CrackMapExec
+    CMESMBShareEnum action that enumerates SMB shares using CrackMapExec
     for lateral movement with cracked credentials.
 
     This action requires:
@@ -22,7 +22,7 @@ class ImpacketSMBEnum(Action):
     """
 
     def __init__(self):
-        super().__init__("ImpacketSMBEnum", "T1021.002", "TA0008", [])
+        super().__init__("CMESMBShareEnum", "T1021.002", "TA0008", [])
         self.noise = 0.3
         self.impact = 0.4
         self.input_motif = self.build_input_motif()
@@ -31,7 +31,7 @@ class ImpacketSMBEnum(Action):
     @classmethod
     def build_input_motif(cls) -> ActionInputMotif:
         """
-        Build the input motif for ImpacketSMBEnum.
+        Build the input motif for CMESMBShareEnum.
 
         Query for Users entities and their associated ComputerAccounts using creds.
 
@@ -39,7 +39,7 @@ class ImpacketSMBEnum(Action):
             ActionInputMotif: Input motif requiring related DomainPartition, ComputerAccount (controller=True) and Credentials entities
         """
         input_motif = ActionInputMotif(
-            name="InputMotif_ImpacketSMBEnum",
+            name="InputMotif_CMESMBShareEnum",
             description="Input requirements for Impacket SMB Enum command",
         )
         input_motif.add_template(entity=Entity('DomainPartition', alias='domain'), template_name="existing_domain")
@@ -61,10 +61,10 @@ class ImpacketSMBEnum(Action):
     @classmethod
     def build_output_motif(cls) -> ActionOutputMotif:
         """
-        Build the output motif for ImpacketSMBEnum.
+        Build the output motif for CMESMBShareEnum.
         """
         output_motif = ActionOutputMotif(
-            name="OutputMotif_ImpacketSMBEnum", description="Output motif for ImpacketSMBEnum"
+            name="OutputMotif_CMESMBShareEnum", description="Output motif for CMESMBShareEnum"
         )
 
         output_motif.add_template(
@@ -79,7 +79,7 @@ class ImpacketSMBEnum(Action):
 
     def expected_outcome(self, pattern: Pattern) -> list[str]:
         """
-        Return the expected outcome of the ImpacketSMBEnum action.
+        Return the expected outcome of the CMESMBShareEnum action.
         """
         username = pattern.get('creds').get('username')
         smb_ip = pattern.get('computer').get('ip_address')
@@ -118,7 +118,7 @@ class ImpacketSMBEnum(Action):
                 stdout="",
                 stderr=f"Invalid user data: username={username}, password={password}",
                 exit_status=1,
-                logs=["ImpacketSMBEnum failed: user data contains boolean values instead of strings"],
+                logs=["CMESMBShareEnum failed: user data contains boolean values instead of strings"],
             )
 
         # Construct the cme smb command for share enumeration
@@ -134,7 +134,7 @@ class ImpacketSMBEnum(Action):
                 stdout=exec_result.stdout,
                 stderr=f"Failed to enumerate SMB shares: {exec_result.stderr}",
                 exit_status=1,
-                logs=[f"ImpacketSMBEnum failed for {username}@{domain}"],
+                logs=[f"CMESMBShareEnum failed for {username}@{domain}"],
             )
 
         # Check for errors in stdout/stderr even if exit_status is 0
@@ -160,7 +160,7 @@ class ImpacketSMBEnum(Action):
                 stdout=exec_result.stdout,
                 stderr=exec_result.stderr,
                 exit_status=1,
-                logs=[f"ImpacketSMBEnum command failed with error: {output_text}"],
+                logs=[f"CMESMBShareEnum command failed with error: {output_text}"],
             )
 
         return exec_result
@@ -169,7 +169,7 @@ class ImpacketSMBEnum(Action):
         self, artefacts: ArtefactManager, pattern: Pattern, output: ActionExecutionResult
     ) -> StateChangeSequence:
         """
-        Capture state changes from the ImpacketSMBEnum execution.
+        Capture state changes from the CMESMBShareEnum execution.
         Update user to mark SMB enumeration as completed.
         """
         changes: StateChangeSequence = []

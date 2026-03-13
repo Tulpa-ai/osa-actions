@@ -1,6 +1,8 @@
 from . import (
     CMESMBReconnaissance,
     CMEUserReconnaissance,
+    CMESMBPasswordSpray,
+    CMESMBShareEnum
 )
 
 
@@ -11,4 +13,6 @@ def get_actions() -> list:
     return [
         CMESMBReconnaissance.CMESMBReconnaissance(),
         CMEUserReconnaissance.CMEUserReconnaissance(),
+        CMESMBPasswordSpray.CMESMBPasswordSpray(),
+        CMESMBShareEnum.CMESMBShareEnum()
     ]
